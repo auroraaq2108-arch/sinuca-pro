@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Sinuca Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ===== MENU PRINCIPAL ===== -->
+  <div id="screen-menu" class="screen">
+    <div class="logo">
+      <span class="logo-ball">🎱</span>
+      <h1>SINUCA <span class="gold">PRO</span></h1>
+    </div>
+    <div class="subtitle">protótipo — moedas de teste, sem dinheiro real</div>
+
+    <div id="coin-bar">
+      <span class="coin-amount">💰 <span id="coins">500</span></span>
+      <button id="btn-topup">+500 (teste)</button>
+    </div>
+    <div id="stats"></div>
+
+    <div class="menu-buttons">
+      <button class="menu-btn" data-setup="treino">🎯 Treinamento vs Bot</button>
+      <button class="menu-btn gold-btn" data-setup="desafio">💰 Desafio de Moedas vs Bot</button>
+      <button class="menu-btn online-btn" id="btn-online">🌐 Jogar Online</button>
+      <button class="menu-btn rank-btn" id="btn-ranking">🏆 Ranking</button>
+    </div>
+  </div>
+
+  <!-- ===== RANKING ===== -->
+  <div id="screen-ranking" class="screen hidden">
+    <h2>🏆 Ranking</h2>
+    <div id="ranking-me"></div>
+    <div id="ranking-list"><div class="rk-empty">Carregando…</div></div>
+    <button id="btn-ranking-back" class="link">← voltar</button>
+  </div>
+
+  <!-- ===== JOGAR ONLINE ===== -->
+  <div id="screen-online" class="screen hidden">
+    <h2>🌐 Jogar Online</h2>
+    <div class="online-box">
+      <input id="nick" maxlength="14" placeholder="seu apelido" autocomplete="off">
+      <div class="opt-group" id="opt-online-mode">
+        <label>Modalidade</label>
+        <div class="seg">
+          <button data-v="8ball" class="sel">8 Ball</button>
+          <button data-v="tresbolas">3 Bolas (raiz)</button>
+        </div>
+      </div>
+      <div class="opt-group" id="opt-online-bestof">
+        <label>Formato da partida</label>
+        <div class="seg">
+          <button data-v="1" class="sel">1 jogo</button>
+          <button data-v="3">Melhor de 3</button>
+          <button data-v="5">Melhor de 5</button>
+        </div>
+      </div>
+      <button id="btn-quick" class="menu-btn gold-btn">🔎 Buscar jogador</button>
+      <button id="btn-cancel-queue" class="link hidden">✕ cancelar busca</button>
+      <div class="online-or">— ou jogue com um amigo —</div>
+      <input id="create-code" maxlength="8" placeholder="senha da sala (opcional)" autocomplete="off" autocapitalize="characters">
+      <button id="btn-create-room" class="menu-btn">Criar sala</button>
+      <div class="join-row">
+        <input id="room-code" maxlength="8" placeholder="SENHA" autocomplete="off" autocapitalize="characters">
+        <button id="btn-join-room">ENTRAR</button>
+      </div>
+    </div>
+    <div id="online-status"></div>
+    <button id="btn-online-back" class="link">← voltar</button>
+  </div>
+
+  <!-- ===== TELA DE CONFIGURAÇÃO ===== -->
+  <div id="screen-setup" class="screen hidden">
+    <h2 id="setup-title"></h2>
+
+    <div class="opt-group" id="opt-mode">
+      <label>Modalidade</label>
+      <div class="seg">
+        <button data-v="8ball" class="sel">8 Ball</button>
+        <button data-v="tresbolas">3 Bolas (raiz)</button>
+      </div>
+    </div>
+
+    <div class="opt-group" id="opt-level">
+      <label>Dificuldade do Bot</label>
+      <div class="seg">
+        <button data-v="iniciante" class="sel">Iniciante</button>
+        <button data-v="medio">Médio</button>
+        <button data-v="pro">Profissional</button>
+      </div>
+    </div>
+
+    <div class="opt-group" id="opt-format">
+      <label>Formato</label>
+      <div class="seg">
+        <button data-v="1">1 jogo</button>
+        <button data-v="3" class="sel">Melhor de 3</button>
+        <button data-v="5">Melhor de 5</button>
+      </div>
+    </div>
+
+    <div class="opt-group hidden" id="opt-stake">
+      <label>Aposta (moedas de teste)</label>
+      <div class="seg">
+        <button data-v="25" class="sel">💰 25</button>
+        <button data-v="100">💰 100</button>
+        <button data-v="250">💰 250</button>
+        <button data-v="500">💰 500</button>
+        <button data-v="1000" class="pro-stake">💰 1.000</button>
+        <button data-v="2500" class="pro-stake">💰 2.500</button>
+      </div>
+    </div>
+
+    <div id="stake-info" class="hidden">
+      Pote = 2× a aposta · vencedor leva <b>90%</b> do pote · <b>10%</b> fica com a plataforma.<br>
+      ⏱ 1 minuto por jogada — estourou o tempo, é falta.
+    </div>
+
+    <button id="btn-start">JOGAR</button>
+    <button id="btn-back" class="link">← voltar</button>
+  </div>
+
+  <!-- ===== TELA DO JOGO ===== -->
+  <div id="screen-game" class="screen hidden">
+    <div id="hud-top">
+      <button id="btn-exit" title="Sair da partida">✕</button>
+      <div class="pbox" id="pbox0">
+        <div class="avatar-wrap">
+          <div class="tring" id="tring0"></div>
+          <div class="avatar">😎</div>
+        </div>
+        <div class="pcol">
+          <div class="pname"></div>
+          <div class="pinfo"></div>
+          <div class="tray"></div>
+        </div>
+      </div>
+      <div id="hud-mid">
+        <div id="mode-badge"></div>
+        <div id="series-badge" class="hidden"></div>
+        <div id="mid-tray" class="tray"></div>
+      </div>
+      <div class="pbox right" id="pbox1">
+        <div class="pcol">
+          <div class="pname"></div>
+          <div class="pinfo"></div>
+          <div class="tray"></div>
+        </div>
+        <div class="avatar-wrap">
+          <div class="tring" id="tring1"></div>
+          <div class="avatar">🤖</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="canvas-wrap">
+      <canvas id="game-canvas"></canvas>
+      <div id="toast" class="hidden"></div>
+    </div>
+
+    <div id="hud-bottom">
+      <button class="aim-btn" id="aim-left">⟲</button>
+      <div id="power-wrap">
+        <span class="power-label">Força</span>
+        <input id="power" type="range" min="1" max="100" value="55">
+      </div>
+      <button class="aim-btn" id="aim-right">⟳</button>
+      <button id="btn-spin" title="Efeito na bola branca"><span id="spin-indicator"></span></button>
+      <button id="btn-shoot">TACAR</button>
+    </div>
+  </div>
+
+  <!-- ===== EFEITO (SPIN) ===== -->
+  <div id="overlay-spin" class="hidden">
+    <div class="panel spin-panel">
+      <h3>Efeito na bola branca</h3>
+      <div id="spin-ball"><div id="spin-dot"></div></div>
+      <div class="spin-hint">
+        Arraste o ponto vermelho:<br>
+        ⬆ em cima = <b>seguir</b> · ⬇ embaixo = <b>puxar</b> · ⬅➡ lados = <b>efeito na tabela</b>
+      </div>
+      <div class="spin-actions">
+        <button id="spin-reset" class="link">zerar</button>
+        <button id="spin-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== FIM DE PARTIDA ===== -->
+  <div id="overlay-end" class="hidden">
+    <div class="panel">
+      <h2 id="end-title"></h2>
+      <div id="end-reason"></div>
+      <div id="end-lines"></div>
+      <button id="btn-rematch">REVANCHE</button>
+      <button id="btn-menu" class="link">← menu principal</button>
+    </div>
+  </div>
+
+  <script src="js/physics.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>

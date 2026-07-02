@@ -1,0 +1,9 @@
+{
+  "name": "sinuca-pro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sinuca Pro — jogo de sinuca com desafios (protótipo)",
+  "scripts": {
+    "start": "node server/server.js"
+  }
+}

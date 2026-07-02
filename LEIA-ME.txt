@@ -1,0 +1,38 @@
+SINUCA PRO — Protótipo (moedas de teste, sem dinheiro real)
+=============================================================
+
+COMO JOGAR:
+1. Dê dois cliques no arquivo "index.html" — abre no navegador.
+2. No celular: copie a pasta ou hospede depois; por enquanto teste no PC.
+
+CONTROLES:
+- Arraste na mesa para mirar (a linha branca mostra a trajetória,
+  a linha amarela mostra pra onde a bola alvo vai e a azul o desvio da branca).
+- Use os botões ⟲ ⟳ para ajuste fino da mira (segure para girar).
+- Bolinha branca ao lado do TACAR = EFEITO: arraste o ponto vermelho
+  (em cima = seguir, embaixo = puxar, lados = efeito na tabela).
+- Ajuste a força na barra e aperte TACAR.
+- Quando tiver "bola na mão", toque na mesa para posicionar a branca.
+
+MODOS:
+- Treinamento vs Bot (grátis) — Iniciante, Médio ou Profissional
+- Desafio de Moedas vs Bot — aposta com moedas de teste,
+  vencedor leva 90% do pote, 10% fica com a "plataforma".
+  Formato à sua escolha: 1 jogo, melhor de 3/5 (ou corrida no 3 Bolas).
+- JOGAR ONLINE — fila rápida (busca jogador), sala com senha,
+  apelido e ranking de pontos. Veja COMO-JOGAR-ONLINE.txt
+
+TEMPO: 1 minuto por jogada (anel dourado em volta do avatar).
+Estourou o tempo = falta (com castigo no 8 Ball).
+
+Modalidade: 8 Ball (lisas x listradas + bola 8 decisiva).
+
+REGRA DE CASTIGO (8 Ball, estilo sinuca de bar):
+- Cometeu falta (acertou a bola do adversário primeiro, derrubou a
+  branca, ou não tocou em nada) = CASTIGO: a menor bola do adversário
+  sai da mesa de graça.
+- Se a branca caiu, o adversário joga DA SAÍDA: posiciona a branca
+  só atrás da linha (a área fica iluminada na tela).
+- Nas outras faltas, o adversário joga de onde a branca parou.
+
+Saldo e estatísticas ficam salvos no navegador.

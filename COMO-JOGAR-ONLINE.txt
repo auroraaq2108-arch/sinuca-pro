@@ -1,0 +1,38 @@
+COMO JOGAR ONLINE (2 celulares/PCs diferentes)
+================================================
+
+PASSO A PASSO (teste em casa, custo zero):
+
+1. Dê dois cliques em "INICIAR-SERVIDOR.bat" (nesta pasta).
+   Vai abrir uma janela preta — é o servidor. DEIXE ELA ABERTA.
+
+2. A janela mostra dois endereços:
+   - "Jogar neste PC"  → abra no navegador do computador
+   - "Jogar no celular" → digite esse endereço no navegador do
+     celular (ex: http://192.168.0.15:8080)
+   IMPORTANTE: o celular tem que estar no MESMO WI-FI do PC.
+
+3. No menu do jogo, toque em "🌐 Jogar Online".
+   - Jogador 1: "Criar sala" → aparece um código de 4 letras
+   - Jogador 2: digita o código e aperta ENTRAR
+   A partida começa sozinha!
+
+4. Para desligar: feche a janela preta.
+
+SE NÃO CONECTAR:
+- Confirme que os dois estão no mesmo Wi-Fi.
+- O firewall do Windows pode perguntar se deixa o Node conectar:
+  clique em "Permitir acesso".
+- Abriu o jogo com dois cliques no index.html? O online só funciona
+  abrindo pelo ENDEREÇO do servidor (passo 2).
+
+PARA JOGAR PELA INTERNET (qualquer lugar do Brasil):
+O servidor precisa ficar numa hospedagem na nuvem. Opções gratuitas
+pra teste: Render.com ou Railway.app. Você precisa criar a conta
+(pede verificação de email/captcha — só um humano consegue).
+Quando quiser, me pede: "me guia pra colocar o servidor na internet"
+que eu te levo passo a passo, leva uns 10 minutos.
+
+Observação: por enquanto o modo online é amistoso (sem moedas).
+Apostas online de verdade precisam da física validada no servidor
+(antitrapaça) — é a próxima grande etapa.
