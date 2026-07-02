@@ -188,7 +188,18 @@ const UI = (() => {
     return mode === 'tresbolas' ? `Corrida até ${target}` : `Melhor de ${bestOf}`;
   }
 
+  // celular: entra em tela cheia pra esconder a barra do navegador (Android)
+  function goFullscreen() {
+    try {
+      if (matchMedia('(pointer: coarse)').matches && !document.fullscreenElement &&
+          document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } catch (e) { /* navegador não deixa, segue o jogo */ }
+  }
+
   function startMatch(cfg) {
+    goFullscreen();
     if (cfg.stake > 0) {
       if (coins < cfg.stake) {
         toast('Moedas insuficientes! Use o +500 no menu.');
@@ -397,6 +408,7 @@ const UI = (() => {
   }
 
   function onlineBegin(seat, ballsArr, breaker, bestOf, mode, names) {
+    goFullscreen();
     online.active = true;
     online.seat = seat;
     online.lastBreaker = breaker;
@@ -460,6 +472,7 @@ const UI = (() => {
     $('#btn-online-back').addEventListener('click', () => { onlineQuit(); showScreen('screen-menu'); });
     $('#btn-ranking').addEventListener('click', openRanking);
     $('#btn-ranking-back').addEventListener('click', () => showScreen('screen-menu'));
+    $('#rotate-hint').addEventListener('click', () => $('#rotate-hint').classList.add('off'));
 
     function readOnlineFormat() {
       online.mode = segValue('opt-online-mode') || '8ball';
