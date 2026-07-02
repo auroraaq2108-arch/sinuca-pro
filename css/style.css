@@ -233,6 +233,18 @@ h2 { font-size: 1.5rem; font-weight: 800; }
   box-shadow: 0 5px 18px rgba(240,180,41,.3);
 }
 .link { background: none; border: none; color: #7d92a8; cursor: pointer; font-size: 0.9rem; padding: 8px; font-family: inherit; }
+.back-btn {
+  background: #10233a;
+  border: 1px solid #2a4a6b;
+  color: #c9d1d9;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 12px 34px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.back-btn:active { transform: scale(0.97); }
 
 /* ===== JOGO ===== */
 #screen-game { gap: 8px; justify-content: center; }

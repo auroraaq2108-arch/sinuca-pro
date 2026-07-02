@@ -518,7 +518,7 @@ const UI = (() => {
     NET.on('joined', m => { online.oppName = m.name || ''; onlineStatus('Conectado! Esperando o anfitrião começar…'); });
     NET.on('peer', m => { online.oppName = m.name || ''; hostStart(0); }); // amigo entrou: anfitrião inicia
     NET.on('queued', () => {
-      onlineStatus('🔎 Procurando adversário… assim que alguém buscar partida, vocês são conectados.');
+      onlineStatus('🎱 Você está na fila! Assim que outro jogador entrar na fila da mesma modalidade, a partida começa sozinha.');
       $('#btn-cancel-queue').classList.remove('hidden');
     });
     NET.on('matched', m => {
