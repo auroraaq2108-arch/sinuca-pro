@@ -1,0 +1,10 @@
+{
+  "name": "Sinuca Pro",
+  "short_name": "Sinuca Pro",
+  "description": "Sinuca de bar online: 8 Ball com castigo, 3 Bolas raiz, fila e ranking",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0a1826",
+  "theme_color": "#0a1826"
+}

@@ -1,4 +1,14 @@
-* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  /* segurar o dedo não pode virar seleção de texto/lupa (iPhone) */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input { -webkit-user-select: text; user-select: text; }
 
 html, body {
   height: 100%;
@@ -607,32 +617,60 @@ button:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
   #power { height: 34px; }
 }
 
-/* celular deitado (tela baixa): tudo compacto pra mesa ficar GRANDE */
+/* celular deitado (tela baixa): a mesa ocupa a tela inteira
+   e os painéis/controles FLUTUAM por cima da madeira */
 @media (max-height: 540px) {
   .screen { padding: 4px; gap: 4px; }
-  #screen-game { gap: 4px; justify-content: flex-start; padding-top: 6px; }
-  #hud-top { gap: 6px; }
-  #btn-exit { width: 30px; height: 30px; font-size: 0.75rem; border-radius: 8px; }
-  .pbox { min-height: 38px; padding: 2px 8px; gap: 6px; border-radius: 9px; }
-  .avatar { width: 28px; height: 28px; font-size: 0.95rem; border-width: 1.5px; }
-  .tring { inset: -3px; }
-  .pname { font-size: 0.7rem; }
-  .pinfo { font-size: 0.58rem; }
-  .mini { width: 8px; height: 8px; }
-  #mode-badge { font-size: 0.58rem; padding: 2px 8px; letter-spacing: 1px; }
-  #series-badge { font-size: 0.55rem; }
-  #hud-mid { gap: 2px; }
+  #screen-game {
+    position: relative;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+    overflow: hidden;
+  }
   #game-canvas {
-    width: min(96vw, calc((100dvh - 106px) * 1.8), 900px);
+    width: min(98vw, calc(100dvh * 1.76), 900px);
     border-radius: 10px;
   }
-  #hud-bottom { gap: 6px; }
-  .aim-btn { width: 38px; height: 38px; font-size: 1.05rem; border-radius: 9px; }
-  #power-wrap { padding: 3px 10px; border-radius: 9px; }
+  #hud-top {
+    position: absolute;
+    top: 3px; left: 6px; right: 6px;
+    width: auto;
+    gap: 6px;
+    z-index: 5;
+    pointer-events: none; /* não rouba o toque da mira */
+  }
+  #btn-exit { pointer-events: auto; width: 30px; height: 30px; font-size: 0.75rem; border-radius: 8px; }
+  .pbox {
+    min-height: 36px;
+    padding: 2px 8px;
+    gap: 6px;
+    border-radius: 9px;
+    background: rgba(14,32,51,0.75);
+    backdrop-filter: blur(2px);
+  }
+  .avatar { width: 26px; height: 26px; font-size: 0.9rem; border-width: 1.5px; }
+  .tring { inset: -3px; }
+  .pname { font-size: 0.68rem; }
+  .pinfo { font-size: 0.56rem; }
+  .mini { width: 7px; height: 7px; }
+  #mode-badge { font-size: 0.56rem; padding: 2px 8px; letter-spacing: 1px; background: rgba(14,32,51,0.75); }
+  #series-badge { font-size: 0.54rem; text-shadow: 0 1px 3px #000; }
+  #hud-mid { gap: 2px; }
+  #hud-bottom {
+    position: absolute;
+    bottom: 3px; left: 50%;
+    transform: translateX(-50%);
+    width: min(94vw, 620px);
+    gap: 6px;
+    z-index: 5;
+  }
+  .aim-btn { width: 38px; height: 38px; font-size: 1.05rem; border-radius: 9px; background: rgba(16,35,58,0.85); }
+  #power-wrap { padding: 3px 10px; border-radius: 9px; background: rgba(16,35,58,0.85); }
   .power-label { display: none; }
   #btn-spin { width: 38px; height: 38px; }
   #btn-shoot { padding: 9px 16px; font-size: 0.85rem; border-radius: 9px; letter-spacing: 1px; }
-  #toast { font-size: 0.72rem; padding: 6px 14px; top: 6px; }
+  #toast { font-size: 0.72rem; padding: 6px 14px; top: 44px; z-index: 6; }
   #overlay-end .panel, .spin-panel { padding: 14px 20px; gap: 8px; }
   #spin-ball { width: 120px; height: 120px; }
   h2 { font-size: 1.1rem; }
