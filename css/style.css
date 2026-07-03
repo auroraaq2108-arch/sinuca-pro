@@ -442,41 +442,27 @@ h2 { font-size: 1.5rem; font-weight: 800; }
   padding: 8px 14px;
 }
 .power-label { color: #7d92a8; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; }
-#power {
+#power-bar {
   flex: 1;
-  height: 22px;
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-}
-#power::-webkit-slider-runnable-track {
-  height: 10px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, #2ec46e, #f0d429 55%, #e04040);
-  box-shadow: inset 0 2px 4px rgba(0,0,0,.4);
-}
-#power::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  margin-top: -6px;
-  background: radial-gradient(circle at 35% 30%, #fff, #cfd8e2 60%, #8fa2b5);
-  border: 1px solid rgba(0,0,0,.35);
-  box-shadow: 0 2px 6px rgba(0,0,0,.5);
+  height: 20px;
+  border-radius: 10px;
+  background: #0a1826;
+  border: 1px solid #2a4a6b;
+  position: relative;
+  overflow: hidden;
   cursor: pointer;
+  touch-action: none; /* arrastar aqui não vira gesto do navegador */
 }
-#power::-moz-range-track {
-  height: 10px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, #2ec46e, #f0d429 55%, #e04040);
+#power-fill {
+  position: absolute;
+  left: 0; bottom: 0;
+  width: 55%;
+  height: 100%;
+  border-radius: 9px;
+  background: linear-gradient(90deg, #2ec46e, #f0d429 60%, #e04040);
+  box-shadow: inset 0 2px 4px rgba(255,255,255,.25);
 }
-#power::-moz-range-thumb {
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff, #cfd8e2 60%, #8fa2b5);
-  border: 1px solid rgba(0,0,0,.35);
-  cursor: pointer;
-}
+.pw-off { opacity: 0.35; pointer-events: none; }
 
 #btn-spin {
   width: 46px; height: 46px;
@@ -666,12 +652,30 @@ button:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
     z-index: 5;
   }
   .aim-btn { width: 38px; height: 38px; font-size: 1.05rem; border-radius: 9px; background: rgba(16,35,58,0.85); }
-  #power-wrap { padding: 3px 10px; border-radius: 9px; background: rgba(16,35,58,0.85); }
+  /* barra de força VERTICAL na lateral direita (arrastar pro lado mudava de página no iPhone) */
+  #power-wrap {
+    position: fixed;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    flex: none;
+    flex-direction: column;
+    width: 46px;
+    height: min(62dvh, 250px);
+    padding: 8px 6px;
+    border-radius: 12px;
+    background: rgba(16,35,58,0.85);
+    z-index: 5;
+  }
+  #power-bar { flex: 1; width: 22px; height: auto; border-radius: 11px; }
+  #power-fill { border-radius: 10px; }
   .power-label { display: none; }
+  #hud-bottom { width: auto; left: 50%; padding-right: 0; }
   #btn-spin { width: 38px; height: 38px; }
   #btn-shoot { padding: 9px 16px; font-size: 0.85rem; border-radius: 9px; letter-spacing: 1px; }
   #toast { font-size: 0.72rem; padding: 6px 14px; top: 44px; z-index: 6; }
   #overlay-end .panel, .spin-panel { padding: 14px 20px; gap: 8px; }
   #spin-ball { width: 120px; height: 120px; }
   h2 { font-size: 1.1rem; }
+  .room-code-big { font-size: 2rem; letter-spacing: 6px; margin: 4px 0; }
 }

@@ -146,7 +146,7 @@ const Game = (() => {
     sinkAnims = []; trail = []; parts = []; strike = null;
     netAuth = false; snapAcc = 0; aimAcc = 0;
     spin = { x: 0, y: 0 };
-    power = 55;
+    // força NÃO reseta: fica onde o jogador deixou na barra (evita dessincronia)
     shotTimer = TURN_TIME;
     autoAim();
     if (!raf) { lastT = performance.now(); raf = requestAnimationFrame(loop); }
@@ -472,7 +472,7 @@ const Game = (() => {
     sinkAnims = []; trail = []; parts = []; strike = null;
     netAuth = false; snapAcc = 0;
     spin = { x: 0, y: 0 };
-    power = 55;
+    // força mantida entre jogos
     shotTimer = TURN_TIME;
     autoAim();
     UI.refreshHud(); UI.refreshControls();
@@ -672,7 +672,7 @@ const Game = (() => {
     ghost = null; botAnim = null; aiming = false;
     sinkAnims = [];
     spin = { x: 0, y: 0 };
-    power = 55;
+    // força mantida entre jogos
     shotTimer = TURN_TIME;
     autoAim();
     UI.refreshHud(); UI.refreshControls();
@@ -719,11 +719,25 @@ const Game = (() => {
     };
   }
 
+  let aimMode = 'ball';
+  const angDiff = (a, b) => {
+    let d = a - b;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return d;
+  };
+
   function onDown(e) {
     e.preventDefault();
     if (!match) return;
     const p = pointerPos(e);
     if (humanTurn() && state === 'aim' && !botAnim) {
+      // pegou no taco (atrás da branca)? então mira arrastando o taco
+      const c = cue();
+      const dx = p.x - c.x, dy = p.y - c.y;
+      const d = Math.hypot(dx, dy);
+      const diff = angDiff(Math.atan2(dy, dx), aimAngle + Math.PI);
+      aimMode = (d > R + 4 && d < 280 && Math.abs(diff) < 0.6) ? 'stick' : 'ball';
       aiming = true;
       setAim(p);
     } else if (humanTurn() && state === 'ballInHand') {
@@ -750,7 +764,9 @@ const Game = (() => {
   function setAim(p) {
     const c = cue();
     const dx = p.x - c.x, dy = p.y - c.y;
-    if (Math.hypot(dx, dy) > 3) aimAngle = Math.atan2(dy, dx);
+    if (Math.hypot(dx, dy) <= 3) return;
+    // modo taco: o dedo segura o taco atrás da branca, a mira vai pro lado oposto
+    aimAngle = aimMode === 'stick' ? Math.atan2(-dy, -dx) : Math.atan2(dy, dx);
   }
 
   function setGhost(p) {

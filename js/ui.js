@@ -338,7 +338,7 @@ const UI = (() => {
     $('#btn-shoot').disabled = !can;
     $('#aim-left').disabled = !can;
     $('#aim-right').disabled = !can;
-    $('#power').disabled = !can;
+    $('#power-wrap').classList.toggle('pw-off', !can);
     $('#btn-spin').disabled = !can;
     // indicador de efeito no botão
     const s = Game.getSpin ? Game.getSpin() : { x: 0, y: 0 };
@@ -390,8 +390,10 @@ const UI = (() => {
 
   function onlineStatus(msg, big) {
     const el = $('#online-status');
+    // sala criada: esconde o formulário e mostra só o código, grandão
+    document.querySelector('.online-box').classList.toggle('hidden', !!big);
     el.innerHTML = big
-      ? `Passe este código pro seu amigo:<div class="room-code-big">${big}</div>Esperando ele entrar…`
+      ? `Passe esta senha pro seu amigo:<div class="room-code-big">${esc(big)}</div>Esperando ele entrar…`
       : msg;
   }
 
@@ -401,6 +403,7 @@ const UI = (() => {
       return;
     }
     onlineStatus('');
+    document.querySelector('.online-box').classList.remove('hidden');
     $('#room-code').value = '';
     $('#nick').value = myNick;
     $('#btn-cancel-queue').classList.add('hidden');
@@ -463,6 +466,7 @@ const UI = (() => {
       showScreen('screen-menu');
       if (msg) displayToast(msg, 4500);
     } else if (msg) {
+      document.querySelector('.online-box').classList.remove('hidden');
       onlineStatus(msg);
     }
   }
@@ -618,6 +622,49 @@ const UI = (() => {
     }
   }
 
+  // ---------- barra de força (controle próprio: funciona deitada ou em pé) ----------
+  let powerVal = 55;
+  function setPowerVal(v) {
+    powerVal = Math.max(1, Math.min(100, Math.round(v)));
+    Game.setPower(powerVal);
+    const bar = $('#power-bar');
+    const vert = bar.clientHeight > bar.clientWidth;
+    const fill = $('#power-fill');
+    fill.style.width = vert ? '100%' : powerVal + '%';
+    fill.style.height = vert ? powerVal + '%' : '100%';
+    // o degradê cobre a régua inteira; o preenchimento só revela até onde foi
+    fill.style.background = vert
+      ? 'linear-gradient(0deg, #2ec46e, #f0d429 60%, #e04040)'
+      : 'linear-gradient(90deg, #2ec46e, #f0d429 60%, #e04040)';
+    fill.style.backgroundSize = vert
+      ? `100% ${10000 / powerVal}%`
+      : `${10000 / powerVal}% 100%`;
+    fill.style.backgroundPosition = 'left bottom';
+  }
+  function bindPower() {
+    const bar = $('#power-bar');
+    let drag = false;
+    const fromEvent = e => {
+      const r = bar.getBoundingClientRect();
+      const vert = r.height > r.width;
+      const v = vert
+        ? (1 - (e.clientY - r.top) / r.height) * 100
+        : ((e.clientX - r.left) / r.width) * 100;
+      setPowerVal(v);
+    };
+    bar.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      const hud = Game.getHud();
+      if (hud && hud.humanCanAct && hud.state === 'aim') {
+        drag = true;
+        fromEvent(e);
+      }
+    });
+    window.addEventListener('pointermove', e => { if (drag) fromEvent(e); });
+    window.addEventListener('pointerup', () => { drag = false; });
+    window.addEventListener('resize', () => setPowerVal(powerVal));
+  }
+
   // segurar o botão de mira fina para girar continuamente
   function bindHold(el, fn) {
     let iv = 0;
@@ -659,7 +706,8 @@ const UI = (() => {
     $('#btn-back').addEventListener('click', () => showScreen('screen-menu'));
     $('#btn-topup').addEventListener('click', () => setCoins(coins + 500));
 
-    $('#power').addEventListener('input', e => Game.setPower(parseInt(e.target.value, 10)));
+    bindPower();
+    setPowerVal(55);
     $('#btn-shoot').addEventListener('click', () => Game.humanShoot());
     bindHold($('#aim-left'), () => Game.nudgeAim(-1));
     bindHold($('#aim-right'), () => Game.nudgeAim(1));
