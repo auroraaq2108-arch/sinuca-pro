@@ -273,7 +273,11 @@ const Game = (() => {
     if (match.online) netAuth = true; // este aparelho resolve e transmite a falta
     let castigo = null;
     if (match.mode !== '9ball') castigo = applyCastigo();
-    finishTurn('tempo esgotado', false, match.mode === '9ball', castigo);
+    if (castigo && castigo.win) {
+      const o = match.players[1 - current];
+      return endMatch(1 - current, `Tempo esgotado com ${o.name} na bola 8 — o castigo tirou a 8!`);
+    }
+    finishTurn('tempo esgotado', false, match.mode === '9ball', castigo ? castigo.n : null);
   }
 
   function autoAim() {
@@ -358,10 +362,14 @@ const Game = (() => {
     }
     // castigo (regra brasileira): falta faz sair a menor bola do adversário
     const castigo = foul ? applyCastigo() : null;
+    if (castigo && castigo.win) {
+      // adversário estava na 8: o castigo tirou a própria 8 — vitória dele
+      return endMatch(1 - current, `Falta de ${p.name} com ${o.name} na bola 8 — o castigo tirou a 8!`);
+    }
     let again = false;
     if (!foul && pots.length) again = openTable || pots.some(n => groupOf(n) === p.group);
     breakShot = false;
-    finishTurn(foul, again, false, castigo);
+    finishTurn(foul, again, false, castigo ? castigo.n : null);
     if (assigned) {
       UI.toast(`${p.name} ficou com as ${groupLabel(p.group).toLowerCase()} · joga de novo! `, 4000, assigned);
     }
@@ -612,10 +620,19 @@ const Game = (() => {
     if (!pocket && PHYS.onImpact) PHYS.onImpact(1, 'pot'); // som (a física já toca quando é local)
   }
 
-  // castigo: sai a menor bola do adversário do jogador da vez
+  // castigo: sai a menor bola do adversário do jogador da vez.
+  // Se ele já está na 8 (grupo limpo), o castigo tira a PRÓPRIA 8 = vitória dele.
   function applyCastigo() {
     const victim = match.players[1 - current];
     if (!victim.group) return null;
+    if (remaining(victim.group) === 0) {
+      const b8 = balls.find(b => b.n === moneyBall() && b.active);
+      if (b8) {
+        b8.active = false;
+        spawnPotFx(b8.n, b8.x, b8.y);
+      }
+      return { win: true, n: moneyBall() };
+    }
     let low = null;
     for (const b of balls) {
       if (b.active && b.n > 0 && groupOf(b.n) === victim.group && (!low || b.n < low.n)) low = b;
@@ -629,7 +646,7 @@ const Game = (() => {
     low.active = false;
     sinkAnims.push({ n: low.n, x: low.x, y: low.y, px: bp.x, py: bp.y, t: 0 });
     if (PHYS.onImpact) PHYS.onImpact(1, 'pot');
-    return low.n;
+    return { n: low.n };
   }
 
   function respot(n) {

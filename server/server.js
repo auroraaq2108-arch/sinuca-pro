@@ -295,7 +295,7 @@ server.on('upgrade', (req, socket) => {
       if (conn.pm) cancelPM(conn.pm, conn);
       const mode = msg.mode === 'tresbolas' ? 'tresbolas' : '8ball';
       const bestOf = [1, 3, 5, 9, 29].includes(msg.bestOf) ? msg.bestOf : (mode === 'tresbolas' ? 9 : 3);
-      const stake = [10, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 10;
+      const stake = [0, 10, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 10;
       const i = queue.findIndex(q => q.mode === mode && q.stake === stake);
       if (i >= 0) {
         const other = queue.splice(i, 1)[0];
@@ -357,7 +357,7 @@ server.on('upgrade', (req, socket) => {
         conn.send(JSON.stringify({ t: 'err', m: 'Essa senha já está em uso, escolha outra' }));
         return;
       }
-      const stake = [10, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 10;
+      const stake = [0, 10, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 10;
       conn.code = want || makeCode();
       conn.room = { seats: [conn, null], reported: true, stake };
       conn.seat = 0;

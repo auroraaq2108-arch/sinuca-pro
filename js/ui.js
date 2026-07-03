@@ -455,17 +455,20 @@ const UI = (() => {
       : msg;
   }
 
-  function openOnline(stakeDefault) {
+  function openOnline(stakeDefault, freeMode) {
     if (!NET.available()) {
       displayToast('Pra jogar online, abra o jogo pelo link do servidor (veja o LEIA-ME)', 5000);
       return;
     }
+    online.freeMode = !!freeMode; // amistoso: sem aposta nenhuma
+    $('#online-title').textContent = freeMode ? '🌐 Amistoso — sem aposta' : '💵 Jogar Valendo';
+    $('#opt-online-stake').classList.toggle('hidden', !!freeMode);
     onlineStatus('');
     document.querySelector('.online-box').classList.remove('hidden');
     $('#room-code').value = '';
     $('#nick').value = myNick;
     $('#btn-cancel-queue').classList.add('hidden');
-    if (stakeDefault != null) selectSeg('opt-online-stake', stakeDefault);
+    if (!freeMode && stakeDefault != null) selectSeg('opt-online-stake', stakeDefault);
     showScreen('screen-online');
   }
 
@@ -550,8 +553,8 @@ const UI = (() => {
   }
 
   function bindOnline() {
-    $('#btn-online').addEventListener('click', () => openOnline('10'));
-    $('#btn-valendo').addEventListener('click', () => openOnline('100'));
+    $('#btn-online').addEventListener('click', () => openOnline(null, true)); // amistoso: sem aposta
+    $('#btn-valendo').addEventListener('click', () => openOnline('100', false));
 
     // conecta em silêncio pro letreiro de vitórias aparecer já no menu
     if (NET.available()) ensureHello(() => {});
@@ -565,7 +568,7 @@ const UI = (() => {
       const v = parseInt(segValue('opt-online-bestof') || '1', 10);
       // 3 bolas: os botões viram corrida até 5 / até 15
       online.bestOf = online.mode === 'tresbolas' ? ({ 1: 1, 3: 9, 5: 29 })[v] : v;
-      online.stake = parseInt(segValue('opt-online-stake') || '0', 10);
+      online.stake = online.freeMode ? 0 : parseInt(segValue('opt-online-stake') || '10', 10);
     }
 
     // tem moedas suficientes pra aposta escolhida?

@@ -31,6 +31,8 @@ REGRA DE CASTIGO (8 Ball, estilo sinuca de bar):
 - Cometeu falta (acertou a bola do adversário primeiro, derrubou a
   branca, ou não tocou em nada) = CASTIGO: a menor bola do adversário
   sai da mesa de graça.
+- Se o adversário já estiver NA BOLA 8 (grupo limpo), o castigo tira
+  a própria 8 = VITÓRIA DELE na hora. Falta no fim de jogo é fatal!
 - Se a branca caiu, o adversário joga DA SAÍDA: posiciona a branca
   só atrás da linha (a área fica iluminada na tela).
 - Nas outras faltas, o adversário joga de onde a branca parou.
