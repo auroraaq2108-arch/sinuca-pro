@@ -218,14 +218,7 @@ const Game = (() => {
         }
       }
     }
-    // online: transmite a mira para o adversário acompanhar
-    if (match && match.online && state === 'aim' && humanTurn()) {
-      aimAcc += dt;
-      if (aimAcc >= 0.12) {
-        aimAcc = 0;
-        NET.send({ t: 'aim', a: Math.round(aimAngle * 1000) / 1000 });
-      }
-    }
+    // (a mira do adversário NÃO é transmitida: cada um mira em segredo)
     if (botAnim) {
       botAnim.t += dt;
       const k = Math.min(1, botAnim.t / botAnim.dur);
@@ -575,6 +568,24 @@ const Game = (() => {
     endMatch(m.w, m.r);
   }
 
+  // alguém reconectou: quem ficou normaliza a mesa e manda o estado completo
+  function resumeShare() {
+    if (!match || !match.online) return;
+    if (state === 'watch' || state === 'shooting') {
+      // tacada interrompida pela queda: congela as bolas onde estão
+      for (const b of balls) {
+        b.vx = 0; b.vy = 0;
+        b.tx = null; b.ty = null; b.lerpMoving = false;
+      }
+      state = 'aim';
+      netAuth = false;
+      shotTimer = TURN_TIME;
+      autoAim();
+      UI.refreshHud(); UI.refreshControls();
+    }
+    NET.send({ t: 'sync', s: packState() });
+  }
+
   // animação + faíscas + som de bola encaçapada
   function spawnPotFx(n, x, y, pocket) {
     let p = pocket;
@@ -822,7 +833,8 @@ const Game = (() => {
     drawTable();
     ctx.save();
     ctx.translate(M, M);
-    const showAim = state === 'aim' && cue().active;
+    // online: só mostra mira/taco na SUA vez (a do adversário fica escondida)
+    const showAim = state === 'aim' && cue().active && (!match.online || humanTurn());
     if (state === 'ballInHand') {
       // ilumina a área de saída onde a branca pode ser posicionada
       ctx.fillStyle = 'rgba(255,255,255,0.06)';
@@ -1255,7 +1267,7 @@ const Game = (() => {
       else if (kind === 'pot') shake = Math.max(shake, 2.2);
     },
     // ---- online ----
-    netShot, netSnap, netSync, netPlace, netAim, netEnd, nextGameOnline,
+    netShot, netSnap, netSync, netPlace, netAim, netEnd, nextGameOnline, resumeShare,
     isNetAuth: () => !!(match && match.online && netAuth),
     makeRack: mode => rack(mode || '8ball').map(b => ({ n: b.n, x: b.x, y: b.y })),
     // usado pelos testes automatizados

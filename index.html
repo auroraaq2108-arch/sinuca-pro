@@ -79,7 +79,7 @@
           <button data-v="1000" class="pro-stake">💰 1.000</button>
           <button data-v="2500" class="pro-stake">💰 2.500</button>
         </div>
-        <div id="online-stake-info">Vencedor leva <b>90%</b> do pote · 10% fica com a plataforma · desistiu, perdeu a aposta</div>
+        <div id="online-stake-info">Vencedor recupera a aposta + leva <b>90% da aposta do rival</b> (taxa de 10% só sobre o ganho) · desistiu, perdeu</div>
       </div>
       <button id="btn-quick" class="menu-btn gold-btn">🎱 Entrar na fila</button>
       <button id="btn-cancel-queue" class="link hidden">✕ sair da fila</button>
@@ -213,6 +213,17 @@
         <button id="spin-reset" class="link">zerar</button>
         <button id="spin-ok">OK</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== PARTIDA ENCONTRADA (aceitar/recusar) ===== -->
+  <div id="overlay-accept" class="hidden">
+    <div class="panel">
+      <h2>🎱 Partida encontrada!</h2>
+      <div id="accept-info"></div>
+      <div id="accept-count"></div>
+      <button id="btn-accept">ACEITAR</button>
+      <button id="btn-decline" class="link">recusar</button>
     </div>
   </div>
 

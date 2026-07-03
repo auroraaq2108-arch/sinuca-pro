@@ -607,7 +607,7 @@ button:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
   border-top-right-radius: 4px;
 }
 
-#overlay-chat, #overlay-report {
+#overlay-chat, #overlay-report, #overlay-accept {
   position: fixed;
   inset: 0;
   background: rgba(3,8,14,0.6);
@@ -615,6 +615,23 @@ button:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
   align-items: center;
   justify-content: center;
   z-index: 12;
+}
+#overlay-accept { z-index: 14; background: rgba(3,8,14,0.8); }
+#accept-info { text-align: center; font-size: 1rem; line-height: 1.6; }
+#accept-info b { color: #f0b429; }
+#accept-count { color: #e04040; font-weight: 800; font-size: 0.9rem; }
+#btn-accept {
+  background: linear-gradient(180deg, #2ec46e, #14663a);
+  border: 1px solid rgba(255,255,255,.25);
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.15rem;
+  font-family: inherit;
+  padding: 14px 60px;
+  border-radius: 14px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  box-shadow: 0 5px 18px rgba(46,196,110,.35);
 }
 .chat-panel h3 { font-size: 1rem; }
 #chat-presets {

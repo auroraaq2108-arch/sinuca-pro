@@ -129,8 +129,9 @@ function elo(winner, loser) {
 }
 
 // ---------- salas e fila ----------
-const rooms = new Map(); // code -> { seats: [conn|null, conn|null], reported }
-const queue = [];        // { conn, mode, bestOf }
+const rooms = new Map();         // code -> { seats: [conn|null, conn|null], reported, stake }
+const queue = [];                // { conn, mode, bestOf, stake }
+const pendingResume = new Map(); // playerId -> { room, seat, code, timer } (queda de conexão)
 let qmCounter = 0;
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O/1/I pra não confundir
 
@@ -148,16 +149,52 @@ function unqueue(conn) {
   if (i >= 0) queue.splice(i, 1);
 }
 
-function leave(conn) {
+// final = saiu de propósito · não-final = conexão caiu (vaga fica guardada 45s)
+function leave(conn, final) {
   const room = conn.room;
-  if (!room) return;
+  if (!room) {
+    conn.room = null; conn.seat = -1; conn.code = null;
+    return;
+  }
   const other = room.seats[1 - conn.seat];
   room.seats[conn.seat] = null;
-  if (other) other.send(JSON.stringify({ t: 'left' }));
-  if (conn.code && !room.seats[0] && !room.seats[1]) rooms.delete(conn.code);
+  if (!final && other && conn.playerId) {
+    other.send(JSON.stringify({ t: 'peer-off' }));
+    const id = conn.playerId, seat = conn.seat, code = conn.code;
+    const timer = setTimeout(() => {
+      pendingResume.delete(id);
+      const o2 = room.seats[1 - seat];
+      if (o2) o2.send(JSON.stringify({ t: 'left' }));
+      if (code) rooms.delete(code);
+    }, 45000);
+    pendingResume.set(conn.playerId, { room, seat, code, timer });
+  } else {
+    if (other) other.send(JSON.stringify({ t: 'left' }));
+    if (conn.code && !room.seats[0] && !room.seats[1]) rooms.delete(conn.code);
+  }
   conn.room = null;
   conn.seat = -1;
   conn.code = null;
+}
+
+// ---------- aceite de partida (fila encontrou: os dois confirmam) ----------
+function cancelPM(pm, decliner, reason) {
+  clearTimeout(pm.timer);
+  const sides = [pm.a, pm.b];
+  sides.forEach(c => { if (c) c.pm = null; });
+  sides.forEach((c, i) => {
+    if (!c || !c.alive) return;
+    if (c === decliner) {
+      c.send(JSON.stringify({ t: 'nomatch', m: 'Você recusou a partida.' }));
+    } else if (pm.acc[i]) {
+      // quem aceitou volta pra frente da fila automaticamente
+      queue.unshift({ conn: c, mode: pm.mode, bestOf: i === 0 ? pm.bestOfA : pm.bestOfB, stake: pm.stake });
+      c.send(JSON.stringify({ t: 'nomatch', m: reason || 'O adversário recusou.', requeued: true }));
+      c.send(JSON.stringify({ t: 'queued', stake: pm.stake }));
+    } else {
+      c.send(JSON.stringify({ t: 'nomatch', m: reason || 'Partida cancelada.' }));
+    }
+  });
 }
 
 server.on('upgrade', (req, socket) => {
@@ -173,13 +210,14 @@ server.on('upgrade', (req, socket) => {
   conn.room = null;
   conn.seat = -1;
   conn.code = null;
+  conn.pm = null; // aceite de partida pendente
 
   conn.onmessage = raw => {
     if (raw.length > 20000) return; // proteção básica
     let msg;
     try { msg = JSON.parse(raw); } catch (e) { return; }
 
-    // identificação do jogador (para o ranking)
+    // identificação do jogador (para o ranking e a reconexão)
     if (msg.t === 'hello') {
       const id = String(msg.id || '').slice(0, 40);
       if (!id) return;
@@ -188,6 +226,44 @@ server.on('upgrade', (req, socket) => {
       const rec = playerRec(id, conn.playerName);
       saveDB();
       conn.send(JSON.stringify({ t: 'pts', pts: rec.pts, w: rec.w, l: rec.l }));
+      // caiu no meio de uma partida? devolve a vaga guardada
+      const pend = pendingResume.get(id);
+      if (pend && !pend.room.seats[pend.seat]) {
+        clearTimeout(pend.timer);
+        pendingResume.delete(id);
+        conn.room = pend.room;
+        conn.seat = pend.seat;
+        conn.code = pend.code;
+        pend.room.seats[pend.seat] = conn;
+        conn.send(JSON.stringify({ t: 'resumed', seat: pend.seat }));
+        const other = pend.room.seats[1 - pend.seat];
+        if (other) other.send(JSON.stringify({ t: 'peer-back' }));
+      }
+      return;
+    }
+
+    // aceite da partida encontrada na fila
+    if (msg.t === 'accept') {
+      const pm = conn.pm;
+      if (!pm) return;
+      pm.acc[conn === pm.a ? 0 : 1] = true;
+      if (pm.acc[0] && pm.acc[1]) {
+        clearTimeout(pm.timer);
+        pm.a.pm = null; pm.b.pm = null;
+        const code = 'QM' + (++qmCounter);
+        const room = { seats: [pm.a, pm.b], reported: true, stake: pm.stake };
+        rooms.set(code, room);
+        pm.a.room = room; pm.a.seat = 0; pm.a.code = code;
+        pm.b.room = room; pm.b.seat = 1; pm.b.code = code;
+        pm.a.send(JSON.stringify({ t: 'matched', seat: 0, mode: pm.mode, bestOf: pm.bestOfA, stake: pm.stake, name: pm.b.playerName }));
+        pm.b.send(JSON.stringify({ t: 'matched', seat: 1, mode: pm.mode, bestOf: pm.bestOfA, stake: pm.stake, name: pm.a.playerName }));
+      } else {
+        conn.send(JSON.stringify({ t: 'waitaccept' }));
+      }
+      return;
+    }
+    if (msg.t === 'decline') {
+      if (conn.pm) cancelPM(conn.pm, conn);
       return;
     }
 
@@ -203,23 +279,23 @@ server.on('upgrade', (req, socket) => {
       return;
     }
 
-    // fila rápida: pareia dois jogadores da mesma modalidade E mesma aposta
+    // fila rápida: achou par → os DOIS precisam aceitar em 20s
     if (msg.t === 'queue') {
-      leave(conn);
+      leave(conn, true);
       unqueue(conn);
+      if (conn.pm) cancelPM(conn.pm, conn);
       const mode = msg.mode === 'tresbolas' ? 'tresbolas' : '8ball';
       const bestOf = [1, 3, 5, 9, 29].includes(msg.bestOf) ? msg.bestOf : (mode === 'tresbolas' ? 9 : 3);
       const stake = [0, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 0;
       const i = queue.findIndex(q => q.mode === mode && q.stake === stake);
       if (i >= 0) {
         const other = queue.splice(i, 1)[0];
-        const code = 'QM' + (++qmCounter);
-        const room = { seats: [other.conn, conn], reported: true, stake };
-        rooms.set(code, room);
-        other.conn.room = room; other.conn.seat = 0; other.conn.code = code;
-        conn.room = room; conn.seat = 1; conn.code = code;
-        other.conn.send(JSON.stringify({ t: 'matched', seat: 0, mode, bestOf: other.bestOf, stake, name: conn.playerName }));
-        conn.send(JSON.stringify({ t: 'matched', seat: 1, mode, bestOf: other.bestOf, stake, name: other.conn.playerName }));
+        const pm = { a: other.conn, b: conn, mode, stake, bestOfA: other.bestOf, bestOfB: bestOf, acc: [false, false], timer: null };
+        other.conn.pm = pm;
+        conn.pm = pm;
+        pm.timer = setTimeout(() => cancelPM(pm, null, 'Ninguém aceitou a tempo.'), 20000);
+        other.conn.send(JSON.stringify({ t: 'found', mode, stake, bestOf: other.bestOf, name: conn.playerName }));
+        conn.send(JSON.stringify({ t: 'found', mode, stake, bestOf: other.bestOf, name: other.conn.playerName }));
       } else {
         queue.push({ conn, mode, bestOf, stake });
         conn.send(JSON.stringify({ t: 'queued', stake }));
@@ -251,8 +327,9 @@ server.on('upgrade', (req, socket) => {
     }
 
     if (msg.t === 'create') {
-      leave(conn);
+      leave(conn, true);
       unqueue(conn);
+      if (conn.pm) cancelPM(conn.pm, conn);
       const want = String(msg.code || '').toUpperCase().trim();
       if (want && !/^[A-Z0-9]{3,8}$/.test(want)) {
         conn.send(JSON.stringify({ t: 'err', m: 'Senha inválida: use 3 a 8 letras/números, sem espaço' }));
@@ -272,8 +349,9 @@ server.on('upgrade', (req, socket) => {
     }
 
     if (msg.t === 'join') {
-      leave(conn);
+      leave(conn, true);
       unqueue(conn);
+      if (conn.pm) cancelPM(conn.pm, conn);
       const wanted = String(msg.code || '').toUpperCase().trim();
       const r = rooms.get(wanted);
       if (!r || !r.seats[0]) { conn.send(JSON.stringify({ t: 'err', m: 'Sala não encontrada' })); return; }
@@ -297,7 +375,8 @@ server.on('upgrade', (req, socket) => {
 
   conn.onclose = () => {
     unqueue(conn);
-    leave(conn);
+    if (conn.pm) cancelPM(conn.pm, conn);
+    leave(conn, false); // queda de conexão: vaga fica guardada pra reconectar
   };
 });
 

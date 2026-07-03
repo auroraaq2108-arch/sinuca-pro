@@ -200,6 +200,7 @@ const UI = (() => {
 
   function startMatch(cfg) {
     goFullscreen();
+    keepAwake();
     if (cfg.stake > 0) {
       if (coins < cfg.stake) {
         toast('Moedas insuficientes! Use o +500 no menu.');
@@ -254,14 +255,15 @@ const UI = (() => {
       lines.push(`<b>Série: ${esc(match.players[0].name)} ${match.wins[0]} × ${match.wins[1]} ${esc(match.players[1].name)}</b>`);
     }
     if (match.stake > 0) {
-      const pot = match.stake * 2;
-      const fee = Math.round(pot * RAKE);
-      const prize = pot - fee;
-      lines.push(`Pote: 💰 ${pot} (${match.stake} + ${match.stake})`);
-      lines.push(`Taxa da plataforma (10%): −💰 ${fee}`);
+      // taxa de 10% incide SÓ sobre o ganho (a aposta do adversário), não sobre o pote
+      const gain = Math.round(match.stake * (1 - RAKE));
+      const fee = match.stake - gain;
+      const prize = match.stake + gain;
+      lines.push(`Aposta: 💰 ${match.stake} cada`);
+      lines.push(`Taxa da plataforma (10% só do ganho): −💰 ${fee}`);
       if (youWon) {
         setCoins(coins + prize);
-        lines.push(`<b>Você recebe: 💰 ${prize}</b>`);
+        lines.push(`<b>Você recebe: sua aposta 💰 ${match.stake} + ganho 💰 ${gain} = 💰 ${prize}</b>`);
       } else {
         lines.push(`Prêmio do vencedor: 💰 ${prize}`);
         lines.push(`<b>Você perdeu a aposta de 💰 ${match.stake}</b>`);
@@ -411,8 +413,22 @@ const UI = (() => {
     if (!document.hidden) document.title = baseTitle;
   });
 
+  // ---------- tela sempre acesa durante partida/fila (Wake Lock) ----------
+  let wakeLock = null;
+  async function keepAwake() {
+    try {
+      if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+    } catch (e) { /* navegador não deixa, segue */ }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && (online.active || queueing)) keepAwake();
+  });
+
   // ---------- jogar online (sala com senha ou fila rápida) ----------
   const online = { active: false, seat: 0, lastBreaker: 0, waiting: false, mode: '8ball', bestOf: 1, stake: 0, oppName: '', settled: true };
+  let queueing = false;      // está na fila?
+  let lastQueue = null;      // preferências da última fila (pra re-entrar após queda)
+  let reconTries = 0;        // tentativas de reconexão
 
   // conecta e se identifica no servidor (apelido + id do ranking)
   function ensureHello(cb) {
@@ -451,6 +467,7 @@ const UI = (() => {
 
   function onlineBegin(seat, ballsArr, breaker, bestOf, mode, names, stake) {
     goFullscreen();
+    keepAwake(); // tela não apaga no meio da partida valendo
     online.active = true;
     online.seat = seat;
     online.lastBreaker = breaker;
@@ -504,9 +521,11 @@ const UI = (() => {
 
   function onlineQuit(msg, walkover) {
     const inGame = online.active;
+    queueing = false;
     // adversário fugiu com aposta pendente? quem FICOU leva o pote (menos a taxa)
     if (walkover && inGame && online.stake > 0 && !online.settled) {
-      const prize = Math.round(online.stake * 2 * (1 - RAKE));
+      const gain = Math.round(online.stake * (1 - RAKE));
+      const prize = online.stake + gain; // sua aposta de volta + 90% da dele
       setCoins(coins + prize);
       msg = (msg || 'O adversário saiu.') + ` Você levou o pote: 💰 ${prize}!`;
       online.settled = true;
@@ -568,13 +587,15 @@ const UI = (() => {
       readOnlineFormat();
       if (!stakeOk()) return;
       onlineStatus('Conectando…');
+      lastQueue = { mode: online.mode, bestOf: online.bestOf, stake: online.stake };
       ensureHello(ok => {
         if (!ok) { onlineStatus('Servidor não encontrado. Abra o jogo pelo link do servidor.'); return; }
-        NET.send({ t: 'queue', mode: online.mode, bestOf: online.bestOf, stake: online.stake });
+        NET.send({ t: 'queue', ...lastQueue });
       });
     });
     $('#btn-cancel-queue').addEventListener('click', () => {
       NET.send({ t: 'unqueue' });
+      queueing = false;
       $('#btn-cancel-queue').classList.add('hidden');
       onlineStatus('Busca cancelada.');
     });
@@ -621,19 +642,61 @@ const UI = (() => {
       hostStart(0);
     });
     NET.on('queued', m => {
+      queueing = true;
+      keepAwake();
       const s = m.stake > 0 ? ` valendo 💰 ${m.stake}` : '';
-      onlineStatus(`🎱 Você está na fila${s}! Assim que outro jogador entrar na mesma fila, a partida começa sozinha.`);
+      onlineStatus(`🎱 Você está na fila${s}! Quando aparecer alguém, você recebe o convite pra ACEITAR.`);
       $('#btn-cancel-queue').classList.remove('hidden');
     });
+
+    // achou adversário: os dois precisam ACEITAR em 20s
+    let acceptTimer = null;
+    NET.on('found', m => {
+      notify('Partida encontrada!', `${m.name || 'Um jogador'} topa jogar${m.stake ? ` valendo 💰 ${m.stake}` : ''} — toca pra aceitar!`);
+      $('#accept-info').innerHTML =
+        `<b>${esc(m.name || 'Jogador')}</b> topa jogar ${m.mode === 'tresbolas' ? '3 Bolas' : '8 Ball'}` +
+        `${m.stake ? ` valendo <b>💰 ${m.stake}</b>` : ' (amistoso)'}`;
+      $('#overlay-accept').classList.remove('hidden');
+      $('#btn-accept').disabled = false;
+      let secs = 20;
+      clearInterval(acceptTimer);
+      $('#accept-count').textContent = `${secs}s pra aceitar`;
+      acceptTimer = setInterval(() => {
+        secs--;
+        $('#accept-count').textContent = secs > 0 ? `${secs}s pra aceitar` : 'tempo esgotado…';
+        if (secs <= 0) clearInterval(acceptTimer);
+      }, 1000);
+    });
+    NET.on('nomatch', m => {
+      clearInterval(acceptTimer);
+      $('#overlay-accept').classList.add('hidden');
+      queueing = !!m.requeued;
+      $('#btn-cancel-queue').classList.toggle('hidden', !m.requeued);
+      onlineStatus((m.requeued ? '🎱 De volta à fila — ' : '⚠ ') + m.m);
+    });
+    NET.on('waitaccept', () => {
+      $('#btn-accept').disabled = true;
+      $('#accept-info').innerHTML += '<br>✔ Você aceitou — esperando o adversário…';
+    });
+    $('#btn-accept').addEventListener('click', () => NET.send({ t: 'accept' }));
+    $('#btn-decline').addEventListener('click', () => {
+      NET.send({ t: 'decline' });
+      clearInterval(acceptTimer);
+      $('#overlay-accept').classList.add('hidden');
+    });
+
     NET.on('matched', m => {
+      clearInterval(acceptTimer);
+      $('#overlay-accept').classList.add('hidden');
       $('#btn-cancel-queue').classList.add('hidden');
+      queueing = false;
       online.mode = m.mode;
       online.bestOf = m.bestOf || 1;
       online.stake = m.stake || 0;
       online.oppName = m.name || '';
-      notify('Adversário encontrado!', `${m.name || 'Jogador'} aceitou — a partida vai começar${m.stake ? ` valendo 💰 ${m.stake}` : ''}`);
+      notify('Partida começando!', `${m.name || 'Jogador'} aceitou${m.stake ? ` — valendo 💰 ${m.stake}` : ''}`);
       if (m.seat === 0) hostStart(0);
-      else onlineStatus(`Adversário encontrado: ${m.name || 'Jogador'}! Começando…`);
+      else onlineStatus(`Os dois aceitaram! Começando…`);
     });
     NET.on('pts', m => {
       if (m.delta != null) {
@@ -651,7 +714,37 @@ const UI = (() => {
     });
     NET.on('nextreq', () => { if (online.seat === 0 && seriesPending) hostNextGame(); });
     NET.on('left', () => onlineQuit('O adversário saiu da partida.', true));
-    NET.on('drop', () => onlineQuit('Conexão perdida. Verifique o Wi-Fi e entre de novo.'));
+
+    // conexão caiu (tela bloqueou, trocou de app): NÃO desiste — reconecta e volta pro jogo
+    NET.on('drop', () => {
+      if ((online.active && !online.settled) || queueing) {
+        displayToast('📶 Conexão caiu — reconectando…', 4000);
+        reconTries = 0;
+        tryReconnect();
+      } else if (online.active) {
+        onlineQuit('Conexão perdida.');
+      }
+    });
+    function tryReconnect() {
+      if (!online.active && !queueing) return;
+      if (++reconTries > 14) {
+        queueing = false;
+        onlineQuit('Não consegui reconectar — verifique a internet.');
+        return;
+      }
+      NET.connect(ok => {
+        if (!ok) { setTimeout(tryReconnect, 3000); return; }
+        NET.send({ t: 'hello', id: myId, name: myNick }); // dispara a retomada no servidor
+        if (queueing && lastQueue) NET.send({ t: 'queue', ...lastQueue }); // volta pra fila
+      });
+    }
+    NET.on('resumed', () => {
+      displayToast('📶 Reconectado! Sincronizando a mesa…', 3500);
+      NET.send({ t: 'syncreq' }); // pede o estado atual pra quem ficou
+    });
+    NET.on('peer-off', () => displayToast('📶 O adversário caiu — esperando ele voltar (até 45s)…', 6000));
+    NET.on('peer-back', () => { displayToast('📶 Adversário reconectou!', 3000); Game.resumeShare(); });
+    NET.on('syncreq', () => Game.resumeShare());
 
     // mensagens do jogo (repassadas pelo servidor)
     NET.on('shot', m => Game.netShot(m));
