@@ -72,6 +72,10 @@ h1 {
   font-family: inherit;
 }
 #stats { color: #7d92a8; font-size: 0.85rem; }
+#feed-line { color: #9fb2c4; font-size: 0.82rem; min-height: 20px; }
+#feed-line b { color: #f0b429; }
+.prize-line { font-size: 1.5rem; color: #2ec46e !important; }
+.prize-line.lose { color: #e04040 !important; }
 
 .menu-buttons { display: flex; flex-direction: column; gap: 12px; width: min(350px, 90vw); }
 .menu-btn {

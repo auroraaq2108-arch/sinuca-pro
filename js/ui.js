@@ -262,20 +262,16 @@ const UI = (() => {
       lines.push(`<b>Série: ${esc(match.players[0].name)} ${match.wins[0]} × ${match.wins[1]} ${esc(match.players[1].name)}</b>`);
     }
     if (match.stake > 0) {
-      // taxa de 10% incide SÓ sobre o ganho (a aposta do adversário), não sobre o pote
+      // taxa de 10% incide SÓ sobre o ganho — extrato curto, sem poluição
       const gain = Math.round(match.stake * (1 - RAKE));
-      const fee = match.stake - gain;
       const prize = match.stake + gain;
-      lines.push(`Aposta: 💰 ${match.stake} cada`);
-      lines.push(`Taxa da plataforma (10% só do ganho): −💰 ${fee}`);
       if (youWon) {
         setCoins(coins + prize);
-        lines.push(`<b>Você recebe: sua aposta 💰 ${match.stake} + ganho 💰 ${gain} = 💰 ${prize}</b>`);
+        lines.push(`<b class="prize-line">+ 💰 ${prize}</b>`);
       } else {
-        lines.push(`Prêmio do vencedor: 💰 ${prize}`);
-        lines.push(`<b>Você perdeu a aposta de 💰 ${match.stake}</b>`);
+        lines.push(`<b class="prize-line lose">− 💰 ${match.stake}</b>`);
       }
-      lines.push(`Seu saldo: 💰 ${coins}`);
+      lines.push(`Saldo: 💰 ${coins}`);
     }
     $('#end-lines').innerHTML = lines.map(l => `<div>${l}</div>`).join('');
 
@@ -442,7 +438,8 @@ const UI = (() => {
     NET.connect(ok => {
       if (!ok) { cb(false); return; }
       const el = $('#nick');
-      myNick = ((el ? el.value : myNick).trim() || 'Jogador').slice(0, 14);
+      const digitado = el && el.value.trim() ? el.value.trim() : myNick;
+      myNick = (digitado || 'Jogador').slice(0, 14);
       localStorage.setItem('sinuca_nick', myNick);
       NET.send({ t: 'hello', id: myId, name: myNick });
       cb(true);
@@ -539,6 +536,7 @@ const UI = (() => {
     }
     online.active = false;
     online.waiting = false;
+    if (NET.isOn()) NET.send({ t: 'bye' }); // saída voluntária: libera a sala na hora
     NET.disconnect();
     if (inGame) {
       Game.stop();
@@ -552,8 +550,11 @@ const UI = (() => {
   }
 
   function bindOnline() {
-    $('#btn-online').addEventListener('click', () => openOnline('0'));
+    $('#btn-online').addEventListener('click', () => openOnline('10'));
     $('#btn-valendo').addEventListener('click', () => openOnline('100'));
+
+    // conecta em silêncio pro letreiro de vitórias aparecer já no menu
+    if (NET.available()) ensureHello(() => {});
     $('#btn-online-back').addEventListener('click', () => { onlineQuit(); showScreen('screen-menu'); });
     $('#btn-ranking').addEventListener('click', openRanking);
     $('#btn-ranking-back').addEventListener('click', () => showScreen('screen-menu'));
@@ -658,7 +659,9 @@ const UI = (() => {
 
     // achou adversário: os dois precisam ACEITAR em 20s
     let acceptTimer = null;
+    let acceptCtx = 'queue'; // 'queue' = fila · 'rematch' = convite de revanche
     NET.on('found', m => {
+      acceptCtx = 'queue';
       Sfx.ding();
       notify('Partida encontrada!', `${m.name || 'Um jogador'} topa jogar${m.stake ? ` valendo 💰 ${m.stake}` : ''} — toca pra aceitar!`);
       $('#accept-info').innerHTML =
@@ -686,11 +689,23 @@ const UI = (() => {
       $('#btn-accept').disabled = true;
       $('#accept-info').innerHTML += '<br>✔ Você aceitou — esperando o adversário…';
     });
-    $('#btn-accept').addEventListener('click', () => NET.send({ t: 'accept' }));
+    $('#btn-accept').addEventListener('click', () => {
+      if (acceptCtx === 'rematch') {
+        $('#overlay-accept').classList.add('hidden');
+        if (online.seat === 0) hostStart(1 - online.lastBreaker);
+        else {
+          NET.send({ t: 'again-ok' });
+          $('#end-reason').textContent = 'Revanche aceita — montando a mesa…';
+        }
+        return;
+      }
+      NET.send({ t: 'accept' });
+    });
     $('#btn-decline').addEventListener('click', () => {
-      NET.send({ t: 'decline' });
       clearInterval(acceptTimer);
       $('#overlay-accept').classList.add('hidden');
+      if (acceptCtx === 'rematch') NET.send({ t: 'again-no' });
+      else NET.send({ t: 'decline' });
     });
 
     NET.on('matched', m => {
@@ -712,6 +727,16 @@ const UI = (() => {
       }
     });
     NET.on('top', m => renderTop(m));
+
+    // letreiro de vitórias no menu (prova social)
+    const showFeed = item => {
+      const el = $('#feed-line');
+      if (!el || !item) return;
+      el.innerHTML = `🏆 <b>${esc(item.w)}</b> acabou de ganhar <b>💰 ${item.v}</b> de ${esc(item.l)}`;
+      el.classList.add('on');
+    };
+    NET.on('feed', m => showFeed(m.item));
+    NET.on('feedlist', m => showFeed(m.list[m.list.length - 1]));
     NET.on('start', m => onlineBegin(1, m.balls, m.breaker, m.bestOf, m.mode, m.names, m.stake));
     NET.on('nextgame', m => {
       seriesPending = false;
@@ -721,6 +746,30 @@ const UI = (() => {
       Game.nextGameOnline(m.balls);
     });
     NET.on('nextreq', () => { if (online.seat === 0 && seriesPending) hostNextGame(); });
+
+    // convite de revanche: o outro lado decide
+    NET.on('again', () => {
+      if (online.waiting) {
+        // os dois pediram revanche ao mesmo tempo: fecha o acordo direto
+        if (online.seat === 0) hostStart(1 - online.lastBreaker);
+        else NET.send({ t: 'again-ok' });
+        return;
+      }
+      Sfx.ding();
+      acceptCtx = 'rematch';
+      $('#accept-info').innerHTML = `<b>${esc(online.oppName || 'O adversário')}</b> quer revanche${online.stake ? ` valendo <b>💰 ${online.stake}</b>` : ''}!`;
+      $('#accept-count').textContent = '';
+      $('#btn-accept').disabled = false;
+      $('#overlay-accept').classList.remove('hidden');
+    });
+    NET.on('again-ok', () => { if (online.seat === 0) hostStart(1 - online.lastBreaker); });
+    NET.on('again-no', () => {
+      online.waiting = false;
+      $('#end-reason').textContent = 'O adversário recusou a revanche.';
+      displayToast('Revanche recusada.', 3500);
+    });
+    // pediu revanche mas o adversário já tinha ido embora: encerra a sala
+    NET.on('alone', () => onlineQuit('O adversário já saiu — sala encerrada.'));
     NET.on('left', () => onlineQuit('O adversário saiu da partida.', true));
 
     // conexão caiu (tela bloqueou, trocou de app): NÃO desiste — reconecta e volta pro jogo
@@ -1005,12 +1054,11 @@ const UI = (() => {
             NET.send({ t: 'nextreq' });
             $('#end-reason').textContent = 'Esperando o anfitrião começar o próximo jogo…';
           }
-        } else if (online.seat === 0) {
-          hostStart(1 - online.lastBreaker); // anfitrião monta a mesa nova
         } else if (!online.waiting) {
+          // revanche agora é CONVITE: o outro precisa aceitar
           online.waiting = true;
           NET.send({ t: 'again' });
-          $('#end-reason').textContent = 'Esperando o anfitrião aceitar a revanche…';
+          $('#end-reason').textContent = 'Convite de revanche enviado — esperando o adversário…';
         }
         return;
       }

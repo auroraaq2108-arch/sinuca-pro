@@ -137,6 +137,8 @@ function elo(winner, loser) {
 const rooms = new Map();         // code -> { seats: [conn|null, conn|null], reported, stake }
 const queue = [];                // { conn, mode, bestOf, stake }
 const pendingResume = new Map(); // playerId -> { room, seat, code, timer } (queda de conexão)
+const allConns = new Set();      // todo mundo conectado (pro letreiro de vitórias)
+const feed = [];                 // últimas vitórias valendo moedas
 let qmCounter = 0;
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O/1/I pra não confundir
 
@@ -216,6 +218,7 @@ server.on('upgrade', (req, socket) => {
   conn.seat = -1;
   conn.code = null;
   conn.pm = null; // aceite de partida pendente
+  allConns.add(conn);
 
   conn.onmessage = raw => {
     if (raw.length > 20000) return; // proteção básica
@@ -231,6 +234,7 @@ server.on('upgrade', (req, socket) => {
       const rec = playerRec(id, conn.playerName);
       saveDB();
       conn.send(JSON.stringify({ t: 'pts', pts: rec.pts, w: rec.w, l: rec.l }));
+      if (feed.length) conn.send(JSON.stringify({ t: 'feedlist', list: feed.slice(-6) }));
       // caiu no meio de uma partida? devolve a vaga guardada
       const pend = pendingResume.get(id);
       if (pend && !pend.room.seats[pend.seat]) {
@@ -291,7 +295,7 @@ server.on('upgrade', (req, socket) => {
       if (conn.pm) cancelPM(conn.pm, conn);
       const mode = msg.mode === 'tresbolas' ? 'tresbolas' : '8ball';
       const bestOf = [1, 3, 5, 9, 29].includes(msg.bestOf) ? msg.bestOf : (mode === 'tresbolas' ? 9 : 3);
-      const stake = [0, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 0;
+      const stake = [10, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 10;
       const i = queue.findIndex(q => q.mode === mode && q.stake === stake);
       if (i >= 0) {
         const other = queue.splice(i, 1)[0];
@@ -328,6 +332,15 @@ server.on('upgrade', (req, socket) => {
       const winnerConn = room.seats[w], loserConn = room.seats[1 - w];
       if (winnerConn) winnerConn.send(JSON.stringify({ t: 'pts', pts: recW.pts, w: recW.w, l: recW.l, delta: d }));
       if (loserConn) loserConn.send(JSON.stringify({ t: 'pts', pts: recL.pts, w: recL.w, l: recL.l, delta: -d }));
+      // letreiro de vitórias: prova social pra quem está no menu
+      if (room.stake > 0 && winnerConn && loserConn) {
+        const prize = room.stake + Math.round(room.stake * 0.9);
+        const item = { w: winnerConn.playerName, l: loserConn.playerName, v: prize };
+        feed.push(item);
+        if (feed.length > 20) feed.shift();
+        const packed = JSON.stringify({ t: 'feed', item });
+        for (const c of allConns) if (c.alive) c.send(packed);
+      }
       return;
     }
 
@@ -344,7 +357,7 @@ server.on('upgrade', (req, socket) => {
         conn.send(JSON.stringify({ t: 'err', m: 'Essa senha já está em uso, escolha outra' }));
         return;
       }
-      const stake = [0, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 0;
+      const stake = [10, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 10;
       conn.code = want || makeCode();
       conn.room = { seats: [conn, null], reported: true, stake };
       conn.seat = 0;
@@ -370,15 +383,31 @@ server.on('upgrade', (req, socket) => {
       return;
     }
 
+    // saída voluntária (botão sair/menu): libera a sala na hora
+    if (msg.t === 'bye') {
+      unqueue(conn);
+      if (conn.pm) cancelPM(conn.pm, conn);
+      leave(conn, true);
+      return;
+    }
+
     // qualquer outra mensagem é do jogo: repassa para o outro jogador
     if (conn.room) {
       if (msg.t === 'start') conn.room.reported = false; // nova partida pode pontuar
       const other = conn.room.seats[1 - conn.seat];
-      if (other) other.send(raw);
+      if (other) {
+        other.send(raw);
+      } else if (msg.t === 'again' || msg.t === 'nextreq') {
+        // pediu revanche mas o adversário já foi embora (e não está reconectando)
+        let waiting = false;
+        for (const p of pendingResume.values()) if (p.room === conn.room) waiting = true;
+        if (!waiting) conn.send(JSON.stringify({ t: 'alone' }));
+      }
     }
   };
 
   conn.onclose = () => {
+    allConns.delete(conn);
     unqueue(conn);
     if (conn.pm) cancelPM(conn.pm, conn);
     leave(conn, false); // queda de conexão: vaga fica guardada pra reconectar
