@@ -582,6 +582,100 @@ button:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
   cursor: pointer;
 }
 
+/* ===== CHAT E REPORTE ===== */
+.pbox { position: relative; }
+.bubble {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 12px;
+  max-width: 240px;
+  background: #fdfcf7;
+  color: #1b1b1b;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 14px;
+  border-top-left-radius: 4px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  z-index: 8;
+  word-break: break-word;
+}
+.pbox.right .bubble {
+  left: auto;
+  right: 12px;
+  border-radius: 14px;
+  border-top-right-radius: 4px;
+}
+
+#overlay-chat, #overlay-report {
+  position: fixed;
+  inset: 0;
+  background: rgba(3,8,14,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 12;
+}
+.chat-panel h3 { font-size: 1rem; }
+#chat-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: min(320px, 80vw);
+}
+#chat-presets button {
+  background: #10233a;
+  border: 1px solid #2a4a6b;
+  color: #e9eef4;
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+#chat-presets button:active { background: #1c8a4e; }
+.chat-row { display: flex; gap: 8px; width: min(320px, 80vw); }
+#chat-text {
+  flex: 1;
+  min-width: 0;
+  background: #0a1826;
+  border: 1px solid #2a4a6b;
+  border-radius: 10px;
+  color: #fff;
+  font-family: inherit;
+  padding: 10px;
+}
+#chat-send {
+  background: linear-gradient(180deg, #27a45e, #14663a);
+  border: none;
+  color: #fff;
+  font-size: 1.1rem;
+  padding: 0 18px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+#report-text {
+  width: min(340px, 82vw);
+  background: #0a1826;
+  border: 1px solid #2a4a6b;
+  border-radius: 10px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 10px;
+  resize: none;
+}
+#report-send {
+  background: linear-gradient(180deg, #f0b429, #c08a10);
+  border: none;
+  color: #241a02;
+  font-weight: 800;
+  font-family: inherit;
+  padding: 11px 40px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
 /* ===== CELULAR ===== */
 
 /* aviso pra girar o celular (só aparece em pé, na tela do jogo) */

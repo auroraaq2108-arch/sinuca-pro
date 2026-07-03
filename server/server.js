@@ -21,17 +21,77 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
+// senha da página de reportes do dono: /reports?senha=...
+const ADMIN_PASS = process.env.ADMIN_PASS || 'dono-sinuca-2026';
+
 const server = http.createServer((req, res) => {
-  let p = decodeURIComponent((req.url || '/').split('?')[0]);
+  const url = req.url || '/';
+
+  // jogadores enviam reportes de erro
+  if (req.method === 'POST' && url === '/report') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 4000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const r = JSON.parse(body);
+        const rep = {
+          quando: new Date().toISOString(),
+          nome: String(r.nome || 'anônimo').slice(0, 20),
+          texto: String(r.texto || '').slice(0, 500),
+          aparelho: String(r.aparelho || '').slice(0, 160),
+        };
+        if (!rep.texto.trim()) throw new Error('vazio');
+        reports.push(rep);
+        if (reports.length > 500) reports.shift();
+        saveReports();
+        console.log(`[REPORTE] ${rep.nome}: ${rep.texto}`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{"ok":true}');
+      } catch (e) {
+        res.writeHead(400);
+        res.end('{"ok":false}');
+      }
+    });
+    return;
+  }
+
+  // página do dono: lista os reportes (protegida por senha)
+  if (url.split('?')[0] === '/reports') {
+    const senha = (url.split('senha=')[1] || '').split('&')[0];
+    if (senha !== ADMIN_PASS) { res.writeHead(403); res.end('403 - senha errada'); return; }
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const rows = reports.slice().reverse().map(r =>
+      `<tr><td>${esc(r.quando.replace('T', ' ').slice(0, 16))}</td><td>${esc(r.nome)}</td><td>${esc(r.texto)}</td><td class="ua">${esc(r.aparelho)}</td></tr>`
+    ).join('');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reportes — Sinuca Pro</title>
+<style>body{font-family:system-ui;background:#0a1826;color:#e9eef4;padding:16px}h1{color:#f0b429}table{border-collapse:collapse;width:100%}td,th{border:1px solid #2a4a6b;padding:8px;text-align:left;vertical-align:top}th{background:#142c44}.ua{color:#7d92a8;font-size:.75rem;max-width:220px;word-break:break-all}</style>
+</head><body><h1>🐞 Reportes (${reports.length})</h1><p>Atenção: no plano grátis os reportes somem quando o servidor reinicia — confira com frequência.</p>
+<table><tr><th>Quando</th><th>Quem</th><th>Reporte</th><th>Aparelho</th></tr>${rows || '<tr><td colspan="4">Nenhum reporte ainda.</td></tr>'}</table></body></html>`);
+    return;
+  }
+
+  let p = decodeURIComponent(url.split('?')[0]);
   if (p === '/') p = '/index.html';
   const file = path.normalize(path.join(ROOT, p));
-  if (!file.startsWith(ROOT) || file.includes('ranking.json')) { res.writeHead(403); res.end('403'); return; }
+  if (!file.startsWith(ROOT) || file.includes(path.join('server', 'data'))) { res.writeHead(403); res.end('403'); return; }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); res.end('404'); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' });
     res.end(data);
   });
 });
+
+// ---------- reportes de erro dos jogadores ----------
+const REPORTS_FILE = path.join(__dirname, 'data', 'reports.json');
+let reports = [];
+try { reports = JSON.parse(fs.readFileSync(REPORTS_FILE, 'utf8')); } catch (e) { /* primeiro uso */ }
+function saveReports() {
+  try {
+    fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
+    fs.writeFileSync(REPORTS_FILE, JSON.stringify(reports));
+  } catch (e) { console.log('não consegui salvar reportes:', e.message); }
+}
 
 // ---------- ranking (arquivo JSON — atenção: na nuvem grátis o disco
 // não é permanente, o ranking zera quando o servidor reinicia) ----------

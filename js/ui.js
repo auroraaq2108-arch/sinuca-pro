@@ -346,6 +346,7 @@ const UI = (() => {
     $('#aim-right').disabled = !can;
     $('#power-wrap').classList.toggle('pw-off', !can);
     $('#btn-spin').disabled = !can;
+    $('#btn-chat').classList.toggle('hidden', !(hud && hud.online)); // chat só online
     // indicador de efeito no botão
     const s = Game.getSpin ? Game.getSpin() : { x: 0, y: 0 };
     const ind = $('#spin-indicator');
@@ -695,6 +696,68 @@ const UI = (() => {
     });
   }
 
+  // ---------- chat da partida (provocação liberada, com moderação) ----------
+  let lastChatAt = 0, bubbleTimers = [null, null];
+
+  function showBubble(seat, text) {
+    const el = $('#bubble' + seat);
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove('hidden');
+    clearTimeout(bubbleTimers[seat]);
+    bubbleTimers[seat] = setTimeout(() => el.classList.add('hidden'), 4500);
+  }
+
+  function sendChat(text) {
+    text = String(text || '').trim().slice(0, 80);
+    if (!text || !online.active) return;
+    const now = Date.now();
+    if (now - lastChatAt < 1500) { displayToast('Calma, uma mensagem por vez 😄'); return; }
+    lastChatAt = now;
+    NET.send({ t: 'chat', m: text });
+    showBubble(online.seat, text);
+    $('#overlay-chat').classList.add('hidden');
+    $('#chat-text').value = '';
+  }
+
+  function bindChat() {
+    $('#btn-chat').addEventListener('click', () => {
+      if (online.active) $('#overlay-chat').classList.remove('hidden');
+    });
+    $('#chat-close').addEventListener('click', () => $('#overlay-chat').classList.add('hidden'));
+    $('#chat-send').addEventListener('click', () => sendChat($('#chat-text').value));
+    $('#chat-text').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat($('#chat-text').value); });
+    document.querySelectorAll('#chat-presets button').forEach(b =>
+      b.addEventListener('click', () => sendChat(b.textContent)));
+    NET.on('chat', m => {
+      showBubble(1 - online.seat, String(m.m || '').slice(0, 80));
+      if (navigator.vibrate) navigator.vibrate(30);
+    });
+  }
+
+  // ---------- reportar erro (chega na página do dono) ----------
+  function bindReport() {
+    $('#btn-report').addEventListener('click', () => {
+      if (!NET.available()) { displayToast('O reporte vai pro servidor — abra o jogo pelo link.', 4500); return; }
+      $('#overlay-report').classList.remove('hidden');
+    });
+    $('#report-close').addEventListener('click', () => $('#overlay-report').classList.add('hidden'));
+    $('#report-send').addEventListener('click', () => {
+      const texto = $('#report-text').value.trim();
+      if (!texto) { displayToast('Escreve o que aconteceu primeiro 🙂'); return; }
+      fetch('/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: myNick || 'anônimo', texto, aparelho: navigator.userAgent }),
+      }).then(r => {
+        if (!r.ok) throw new Error();
+        $('#overlay-report').classList.add('hidden');
+        $('#report-text').value = '';
+        displayToast('🐞 Reporte enviado — valeu por ajudar a melhorar o jogo!', 4500);
+      }).catch(() => displayToast('Não consegui enviar. Tenta de novo em instantes.', 4500));
+    });
+  }
+
   // ---------- anel do relógio de jogada (em volta do avatar) ----------
   function updateTimer(idx, frac) {
     for (let i = 0; i < 2; i++) {
@@ -880,6 +943,8 @@ const UI = (() => {
     });
 
     bindOnline();
+    bindChat();
+    bindReport();
   });
 
   return { toast, refreshHud, refreshControls, matchEnded, gameEnded, updateTimer };

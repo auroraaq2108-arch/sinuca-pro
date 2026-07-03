@@ -30,6 +30,7 @@
       <button id="btn-topup">+500 (teste)</button>
     </div>
     <div id="stats"></div>
+    <button id="btn-report" class="link">🐞 Achou um erro? Reporta aqui</button>
 
     <div class="menu-buttons">
       <button class="menu-btn" data-setup="treino">🎯 Treinamento vs Bot</button>
@@ -151,6 +152,7 @@
     <div id="hud-top">
       <button id="btn-exit" title="Sair da partida">✕</button>
       <div class="pbox" id="pbox0">
+        <div class="bubble hidden" id="bubble0"></div>
         <div class="avatar-wrap">
           <div class="tring" id="tring0"></div>
           <div class="avatar">😎</div>
@@ -167,6 +169,7 @@
         <div id="mid-tray" class="tray"></div>
       </div>
       <div class="pbox right" id="pbox1">
+        <div class="bubble hidden" id="bubble1"></div>
         <div class="pcol">
           <div class="pname"></div>
           <div class="pinfo"></div>
@@ -185,6 +188,7 @@
     </div>
 
     <div id="hud-bottom">
+      <button class="aim-btn hidden" id="btn-chat">💬</button>
       <button class="aim-btn" id="aim-left">⟲</button>
       <div id="power-wrap">
         <span class="power-label">Força</span>
@@ -209,6 +213,36 @@
         <button id="spin-reset" class="link">zerar</button>
         <button id="spin-ok">OK</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== CHAT ===== -->
+  <div id="overlay-chat" class="hidden">
+    <div class="panel chat-panel">
+      <h3>💬 Mandar mensagem</h3>
+      <div id="chat-presets">
+        <button>👍 Boa!</button>
+        <button>😂 kkkkkk</button>
+        <button>🍀 Foi sorte!</button>
+        <button>😎 Tá tremendo?</button>
+        <button>⏰ Joga logo!</button>
+        <button>🤝 Boa partida!</button>
+      </div>
+      <div class="chat-row">
+        <input id="chat-text" maxlength="80" placeholder="ou escreve aqui…" autocomplete="off">
+        <button id="chat-send">➤</button>
+      </div>
+      <button id="chat-close" class="link">fechar</button>
+    </div>
+  </div>
+
+  <!-- ===== REPORTAR ERRO ===== -->
+  <div id="overlay-report" class="hidden">
+    <div class="panel">
+      <h3>🐞 Reportar um erro</h3>
+      <textarea id="report-text" maxlength="500" rows="4" placeholder="Conta o que aconteceu: o que você fez, o que deu errado…"></textarea>
+      <button id="report-send">ENVIAR</button>
+      <button id="report-close" class="link">cancelar</button>
     </div>
   </div>
 
