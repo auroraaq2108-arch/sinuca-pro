@@ -33,8 +33,8 @@
 
     <div class="menu-buttons">
       <button class="menu-btn" data-setup="treino">🎯 Treinamento vs Bot</button>
-      <button class="menu-btn gold-btn" data-setup="desafio">💰 Desafio de Moedas vs Bot</button>
-      <button class="menu-btn online-btn" id="btn-online">🌐 Jogar Online</button>
+      <button class="menu-btn gold-btn" id="btn-valendo">💵 Jogar Valendo — contra jogadores</button>
+      <button class="menu-btn online-btn" id="btn-online">🌐 Amistoso Online</button>
       <button class="menu-btn rank-btn" id="btn-ranking">🏆 Ranking</button>
     </div>
   </div>
@@ -66,6 +66,19 @@
           <button data-v="3">Melhor de 3</button>
           <button data-v="5">Melhor de 5</button>
         </div>
+      </div>
+      <div class="opt-group" id="opt-online-stake">
+        <label>Valendo quanto?</label>
+        <div class="seg">
+          <button data-v="0" class="sel">Grátis</button>
+          <button data-v="25">💰 25</button>
+          <button data-v="100">💰 100</button>
+          <button data-v="250">💰 250</button>
+          <button data-v="500">💰 500</button>
+          <button data-v="1000" class="pro-stake">💰 1.000</button>
+          <button data-v="2500" class="pro-stake">💰 2.500</button>
+        </div>
+        <div id="online-stake-info">Vencedor leva <b>90%</b> do pote · 10% fica com a plataforma · desistiu, perdeu a aposta</div>
       </div>
       <button id="btn-quick" class="menu-btn gold-btn">🎱 Entrar na fila</button>
       <button id="btn-cancel-queue" class="link hidden">✕ sair da fila</button>

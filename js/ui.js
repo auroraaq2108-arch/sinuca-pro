@@ -278,6 +278,7 @@ const UI = (() => {
     if (vsRemote && online.active && online.seat === 0) {
       NET.send({ t: 'result', w: winner });
     }
+    if (vsRemote) online.settled = true; // aposta paga: fuga depois daqui não dá pote
     $('#overlay-end').classList.remove('hidden');
   }
 
@@ -374,7 +375,7 @@ const UI = (() => {
   }
 
   // ---------- jogar online (sala com senha ou fila rápida) ----------
-  const online = { active: false, seat: 0, lastBreaker: 0, waiting: false, mode: '8ball', bestOf: 1, oppName: '' };
+  const online = { active: false, seat: 0, lastBreaker: 0, waiting: false, mode: '8ball', bestOf: 1, stake: 0, oppName: '', settled: true };
 
   // conecta e se identifica no servidor (apelido + id do ranking)
   function ensureHello(cb) {
@@ -397,7 +398,7 @@ const UI = (() => {
       : msg;
   }
 
-  function openOnline() {
+  function openOnline(stakeDefault) {
     if (!NET.available()) {
       displayToast('Pra jogar online, abra o jogo pelo link do servidor (veja o LEIA-ME)', 5000);
       return;
@@ -407,17 +408,22 @@ const UI = (() => {
     $('#room-code').value = '';
     $('#nick').value = myNick;
     $('#btn-cancel-queue').classList.add('hidden');
+    if (stakeDefault != null) selectSeg('opt-online-stake', stakeDefault);
     showScreen('screen-online');
   }
 
-  function onlineBegin(seat, ballsArr, breaker, bestOf, mode, names) {
+  function onlineBegin(seat, ballsArr, breaker, bestOf, mode, names, stake) {
     goFullscreen();
     online.active = true;
     online.seat = seat;
     online.lastBreaker = breaker;
     online.waiting = false;
     online.mode = mode || '8ball';
+    online.stake = stake || 0;
+    online.settled = online.stake === 0;
     seriesPending = false;
+    // a aposta sai da carteira na entrada (escrow) — volta em dobro (menos a taxa) se vencer
+    if (online.stake > 0) setCoins(coins - online.stake);
     $('#btn-rematch').textContent = 'REVANCHE';
     $(`#pbox${seat} .avatar`).textContent = '😎';
     $(`#pbox${1 - seat} .avatar`).textContent = '🧑';
@@ -429,7 +435,7 @@ const UI = (() => {
       online: { seat },
       balls: ballsArr,
       breaker,
-      stake: 0,
+      stake: online.stake,
       bestOf: bestOf || 1,
       names,
     });
@@ -438,10 +444,14 @@ const UI = (() => {
 
   // anfitrião (assento 0) monta a mesa e manda pro convidado
   function hostStart(breaker) {
+    if (online.stake > 0 && coins < online.stake) {
+      displayToast(`Moedas insuficientes pra valer 💰 ${online.stake}`, 4500);
+      return;
+    }
     const rackBalls = Game.makeRack(online.mode);
     const names = [myNick || 'Jogador 1', online.oppName || 'Jogador 2'];
-    NET.send({ t: 'start', balls: rackBalls, breaker, bestOf: online.bestOf || 1, mode: online.mode, names });
-    onlineBegin(0, rackBalls, breaker, online.bestOf || 1, online.mode, names);
+    NET.send({ t: 'start', balls: rackBalls, breaker, bestOf: online.bestOf || 1, mode: online.mode, names, stake: online.stake });
+    onlineBegin(0, rackBalls, breaker, online.bestOf || 1, online.mode, names, online.stake);
   }
 
   // próximo jogo da série online: anfitrião monta a mesa nova pros dois
@@ -455,8 +465,15 @@ const UI = (() => {
     Game.nextGameOnline(rackBalls);
   }
 
-  function onlineQuit(msg) {
+  function onlineQuit(msg, walkover) {
     const inGame = online.active;
+    // adversário fugiu com aposta pendente? quem FICOU leva o pote (menos a taxa)
+    if (walkover && inGame && online.stake > 0 && !online.settled) {
+      const prize = Math.round(online.stake * 2 * (1 - RAKE));
+      setCoins(coins + prize);
+      msg = (msg || 'O adversário saiu.') + ` Você levou o pote: 💰 ${prize}!`;
+      online.settled = true;
+    }
     online.active = false;
     online.waiting = false;
     NET.disconnect();
@@ -464,7 +481,7 @@ const UI = (() => {
       Game.stop();
       $('#overlay-end').classList.add('hidden');
       showScreen('screen-menu');
-      if (msg) displayToast(msg, 4500);
+      if (msg) displayToast(msg, 5500);
     } else if (msg) {
       document.querySelector('.online-box').classList.remove('hidden');
       onlineStatus(msg);
@@ -472,7 +489,8 @@ const UI = (() => {
   }
 
   function bindOnline() {
-    $('#btn-online').addEventListener('click', openOnline);
+    $('#btn-online').addEventListener('click', () => openOnline('0'));
+    $('#btn-valendo').addEventListener('click', () => openOnline('100'));
     $('#btn-online-back').addEventListener('click', () => { onlineQuit(); showScreen('screen-menu'); });
     $('#btn-ranking').addEventListener('click', openRanking);
     $('#btn-ranking-back').addEventListener('click', () => showScreen('screen-menu'));
@@ -483,25 +501,37 @@ const UI = (() => {
       const v = parseInt(segValue('opt-online-bestof') || '1', 10);
       // 3 bolas: os botões viram corrida até 5 / até 15
       online.bestOf = online.mode === 'tresbolas' ? ({ 1: 1, 3: 9, 5: 29 })[v] : v;
+      online.stake = parseInt(segValue('opt-online-stake') || '0', 10);
+    }
+
+    // tem moedas suficientes pra aposta escolhida?
+    function stakeOk() {
+      if (online.stake > 0 && coins < online.stake) {
+        onlineStatus(`⚠ Moedas insuficientes pra valer 💰 ${online.stake} — seu saldo: 💰 ${coins}. Pegue +500 no menu.`);
+        return false;
+      }
+      return true;
     }
 
     $('#btn-create-room').addEventListener('click', () => {
       const want = $('#create-code').value.trim();
       readOnlineFormat();
+      if (!stakeOk()) return;
       onlineStatus('Conectando…');
       ensureHello(ok => {
         if (!ok) { onlineStatus('Servidor não encontrado. Abra o jogo pelo link do servidor.'); return; }
-        NET.send({ t: 'create', code: want });
+        NET.send({ t: 'create', code: want, stake: online.stake });
       });
     });
 
-    // fila rápida: busca qualquer jogador da mesma modalidade
+    // fila rápida: pareia com quem escolheu a mesma modalidade E mesma aposta
     $('#btn-quick').addEventListener('click', () => {
       readOnlineFormat();
+      if (!stakeOk()) return;
       onlineStatus('Conectando…');
       ensureHello(ok => {
         if (!ok) { onlineStatus('Servidor não encontrado. Abra o jogo pelo link do servidor.'); return; }
-        NET.send({ t: 'queue', mode: online.mode, bestOf: online.bestOf });
+        NET.send({ t: 'queue', mode: online.mode, bestOf: online.bestOf, stake: online.stake });
       });
     });
     $('#btn-cancel-queue').addEventListener('click', () => {
@@ -532,16 +562,31 @@ const UI = (() => {
     // mensagens do servidor
     NET.on('created', m => onlineStatus('', m.code));
     NET.on('err', m => onlineStatus('⚠ ' + m.m));
-    NET.on('joined', m => { online.oppName = m.name || ''; onlineStatus('Conectado! Esperando o anfitrião começar…'); });
+    NET.on('joined', m => {
+      const stake = m.stake || 0;
+      if (stake > 0 && coins < stake) {
+        NET.disconnect();
+        document.querySelector('.online-box').classList.remove('hidden');
+        onlineStatus(`⚠ Essa sala está valendo 💰 ${stake} e seu saldo é 💰 ${coins}. Pegue +500 no menu.`);
+        return;
+      }
+      online.stake = stake;
+      online.oppName = m.name || '';
+      onlineStatus(stake > 0
+        ? `Conectado! Sala valendo 💰 ${stake}. Esperando o anfitrião começar…`
+        : 'Conectado! Esperando o anfitrião começar…');
+    });
     NET.on('peer', m => { online.oppName = m.name || ''; hostStart(0); }); // amigo entrou: anfitrião inicia
-    NET.on('queued', () => {
-      onlineStatus('🎱 Você está na fila! Assim que outro jogador entrar na fila da mesma modalidade, a partida começa sozinha.');
+    NET.on('queued', m => {
+      const s = m.stake > 0 ? ` valendo 💰 ${m.stake}` : '';
+      onlineStatus(`🎱 Você está na fila${s}! Assim que outro jogador entrar na mesma fila, a partida começa sozinha.`);
       $('#btn-cancel-queue').classList.remove('hidden');
     });
     NET.on('matched', m => {
       $('#btn-cancel-queue').classList.add('hidden');
       online.mode = m.mode;
       online.bestOf = m.bestOf || 1;
+      online.stake = m.stake || 0;
       online.oppName = m.name || '';
       if (m.seat === 0) hostStart(0);
       else onlineStatus(`Adversário encontrado: ${m.name || 'Jogador'}! Começando…`);
@@ -552,7 +597,7 @@ const UI = (() => {
       }
     });
     NET.on('top', m => renderTop(m));
-    NET.on('start', m => onlineBegin(1, m.balls, m.breaker, m.bestOf, m.mode, m.names));
+    NET.on('start', m => onlineBegin(1, m.balls, m.breaker, m.bestOf, m.mode, m.names, m.stake));
     NET.on('nextgame', m => {
       seriesPending = false;
       online.waiting = false;
@@ -561,8 +606,8 @@ const UI = (() => {
       Game.nextGameOnline(m.balls);
     });
     NET.on('nextreq', () => { if (online.seat === 0 && seriesPending) hostNextGame(); });
-    NET.on('left', () => onlineQuit('O adversário saiu da partida.'));
-    NET.on('drop', () => onlineQuit('Conexão perdida. Verifique o Wi-Fi e crie uma nova sala.'));
+    NET.on('left', () => onlineQuit('O adversário saiu da partida.', true));
+    NET.on('drop', () => onlineQuit('Conexão perdida. Verifique o Wi-Fi e entre de novo.'));
 
     // mensagens do jogo (repassadas pelo servidor)
     NET.on('shot', m => Game.netShot(m));
@@ -727,7 +772,10 @@ const UI = (() => {
     $('#btn-exit').addEventListener('click', () => {
       const hud = Game.getHud();
       if (online.active) {
-        if (hud && hud.state !== 'over' && !confirm('Sair da partida online?')) return;
+        const aviso = online.stake > 0 && !online.settled
+          ? 'Sair agora PERDE a aposta (o adversário leva o pote). Sair mesmo assim?'
+          : 'Sair da partida online?';
+        if (hud && hud.state !== 'over' && !confirm(aviso)) return;
         onlineQuit();
         Game.stop();
         showScreen('screen-menu');

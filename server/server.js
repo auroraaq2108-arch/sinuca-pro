@@ -143,25 +143,26 @@ server.on('upgrade', (req, socket) => {
       return;
     }
 
-    // fila rápida: pareia dois jogadores da mesma modalidade
+    // fila rápida: pareia dois jogadores da mesma modalidade E mesma aposta
     if (msg.t === 'queue') {
       leave(conn);
       unqueue(conn);
       const mode = msg.mode === 'tresbolas' ? 'tresbolas' : '8ball';
       const bestOf = [1, 3, 5, 9, 29].includes(msg.bestOf) ? msg.bestOf : (mode === 'tresbolas' ? 9 : 3);
-      const i = queue.findIndex(q => q.mode === mode);
+      const stake = [0, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 0;
+      const i = queue.findIndex(q => q.mode === mode && q.stake === stake);
       if (i >= 0) {
         const other = queue.splice(i, 1)[0];
         const code = 'QM' + (++qmCounter);
-        const room = { seats: [other.conn, conn], reported: true };
+        const room = { seats: [other.conn, conn], reported: true, stake };
         rooms.set(code, room);
         other.conn.room = room; other.conn.seat = 0; other.conn.code = code;
         conn.room = room; conn.seat = 1; conn.code = code;
-        other.conn.send(JSON.stringify({ t: 'matched', seat: 0, mode, bestOf: other.bestOf, name: conn.playerName }));
-        conn.send(JSON.stringify({ t: 'matched', seat: 1, mode, bestOf: other.bestOf, name: other.conn.playerName }));
+        other.conn.send(JSON.stringify({ t: 'matched', seat: 0, mode, bestOf: other.bestOf, stake, name: conn.playerName }));
+        conn.send(JSON.stringify({ t: 'matched', seat: 1, mode, bestOf: other.bestOf, stake, name: other.conn.playerName }));
       } else {
-        queue.push({ conn, mode, bestOf });
-        conn.send(JSON.stringify({ t: 'queued' }));
+        queue.push({ conn, mode, bestOf, stake });
+        conn.send(JSON.stringify({ t: 'queued', stake }));
       }
       return;
     }
@@ -201,11 +202,12 @@ server.on('upgrade', (req, socket) => {
         conn.send(JSON.stringify({ t: 'err', m: 'Essa senha já está em uso, escolha outra' }));
         return;
       }
+      const stake = [0, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 0;
       conn.code = want || makeCode();
-      conn.room = { seats: [conn, null], reported: true };
+      conn.room = { seats: [conn, null], reported: true, stake };
       conn.seat = 0;
       rooms.set(conn.code, conn.room);
-      conn.send(JSON.stringify({ t: 'created', code: conn.code }));
+      conn.send(JSON.stringify({ t: 'created', code: conn.code, stake }));
       return;
     }
 
@@ -220,7 +222,7 @@ server.on('upgrade', (req, socket) => {
       conn.seat = 1;
       conn.code = wanted;
       r.seats[1] = conn;
-      conn.send(JSON.stringify({ t: 'joined', name: r.seats[0].playerName }));
+      conn.send(JSON.stringify({ t: 'joined', name: r.seats[0].playerName, stake: r.stake || 0 }));
       r.seats[0].send(JSON.stringify({ t: 'peer', name: conn.playerName }));
       return;
     }

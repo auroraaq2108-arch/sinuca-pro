@@ -147,6 +147,14 @@ h1 {
   width: min(360px, 92vw);
 }
 .online-or { color: #7d92a8; font-size: 0.8rem; }
+#online-stake-info {
+  color: #9fb2c4;
+  font-size: 0.72rem;
+  text-align: center;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+#online-stake-info b { color: #f0b429; }
 .join-row { display: flex; gap: 8px; width: 100%; }
 #room-code, #create-code {
   flex: 1;
