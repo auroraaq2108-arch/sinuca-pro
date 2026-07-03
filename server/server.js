@@ -77,7 +77,12 @@ const server = http.createServer((req, res) => {
   if (!file.startsWith(ROOT) || file.includes(path.join('server', 'data'))) { res.writeHead(403); res.end('403'); return; }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); res.end('404'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' });
+    const ext = path.extname(file).toLowerCase();
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      // sempre a versão mais nova: jogador com jogo desatualizado não conversa com o novo
+      'Cache-Control': ['.html', '.js', '.css', '.json'].includes(ext) ? 'no-store' : 'public, max-age=3600',
+    });
     res.end(data);
   });
 });

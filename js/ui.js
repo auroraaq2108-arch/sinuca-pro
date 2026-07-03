@@ -89,7 +89,14 @@ const UI = (() => {
         noise(0.22, 0.09, 600, 'lowpass');
       }
     }
-    return { hit, ensure };
+    // "tim-tim" de alerta (partida encontrada) — toca mesmo sem permissão de notificação
+    function ding() {
+      ensure();
+      if (!ac) return;
+      play(880, 0.35, 0.18, 'sine');
+      setTimeout(() => { if (ac) play(1318, 0.35, 0.3, 'sine'); }, 150);
+    }
+    return { hit, ensure, ding };
   })();
 
   // ---------- moedas / estatísticas ----------
@@ -652,6 +659,7 @@ const UI = (() => {
     // achou adversário: os dois precisam ACEITAR em 20s
     let acceptTimer = null;
     NET.on('found', m => {
+      Sfx.ding();
       notify('Partida encontrada!', `${m.name || 'Um jogador'} topa jogar${m.stake ? ` valendo 💰 ${m.stake}` : ''} — toca pra aceitar!`);
       $('#accept-info').innerHTML =
         `<b>${esc(m.name || 'Jogador')}</b> topa jogar ${m.mode === 'tresbolas' ? '3 Bolas' : '8 Ball'}` +
