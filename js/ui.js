@@ -291,9 +291,14 @@ const UI = (() => {
     return `<span class="mini${dim ? ' dim' : ''}" style="background:${bg}"></span>`;
   }
 
+  let wasMyTurn = false;
   function refreshHud() {
     const hud = Game.getHud();
     if (!hud) return;
+    // chegou a sua vez com o jogo minimizado? avisa antes do relógio comer
+    const myTurn = !!hud.online && hud.humanCanAct;
+    if (myTurn && !wasMyTurn) notify('Sua vez de jogar!', 'O relógio de 1 minuto já está correndo — volta lá!');
+    wasMyTurn = myTurn;
     for (let i = 0; i < 2; i++) {
       const box = $(`#pbox${i}`);
       const p = hud.players[i];
@@ -373,6 +378,37 @@ const UI = (() => {
     spinSel = { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 };
     placeSpinDot();
   }
+
+  // ---------- notificações (avisa mesmo com o jogo minimizado) ----------
+  let swReg = null;
+  const baseTitle = document.title;
+  if ('serviceWorker' in navigator && NET.available()) {
+    navigator.serviceWorker.register('sw.js').then(r => { swReg = r; }).catch(() => { /* sem suporte */ });
+  }
+  function askNotif() {
+    try {
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    } catch (e) { /* sem suporte */ }
+  }
+  function notify(title, body) {
+    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+    if (!document.hidden) return; // com o jogo na tela, o aviso normal resolve
+    document.title = '🎱 ' + title;
+    try {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        if (swReg && swReg.showNotification) {
+          swReg.showNotification('Sinuca Pro — ' + title, { body, tag: 'sinuca-pro', renotify: true, vibrate: [100, 50, 100] });
+        } else {
+          new Notification('Sinuca Pro — ' + title, { body });
+        }
+      }
+    } catch (e) { /* navegador não deixa */ }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) document.title = baseTitle;
+  });
 
   // ---------- jogar online (sala com senha ou fila rápida) ----------
   const online = { active: false, seat: 0, lastBreaker: 0, waiting: false, mode: '8ball', bestOf: 1, stake: 0, oppName: '', settled: true };
@@ -514,6 +550,7 @@ const UI = (() => {
     }
 
     $('#btn-create-room').addEventListener('click', () => {
+      askNotif(); // pede permissão de notificação (clique do usuário é a hora certa)
       const want = $('#create-code').value.trim();
       readOnlineFormat();
       if (!stakeOk()) return;
@@ -526,6 +563,7 @@ const UI = (() => {
 
     // fila rápida: pareia com quem escolheu a mesma modalidade E mesma aposta
     $('#btn-quick').addEventListener('click', () => {
+      askNotif();
       readOnlineFormat();
       if (!stakeOk()) return;
       onlineStatus('Conectando…');
@@ -576,7 +614,11 @@ const UI = (() => {
         ? `Conectado! Sala valendo 💰 ${stake}. Esperando o anfitrião começar…`
         : 'Conectado! Esperando o anfitrião começar…');
     });
-    NET.on('peer', m => { online.oppName = m.name || ''; hostStart(0); }); // amigo entrou: anfitrião inicia
+    NET.on('peer', m => {
+      online.oppName = m.name || '';
+      notify('Adversário entrou!', `${m.name || 'Um jogador'} entrou na sua sala — a partida vai começar`);
+      hostStart(0);
+    });
     NET.on('queued', m => {
       const s = m.stake > 0 ? ` valendo 💰 ${m.stake}` : '';
       onlineStatus(`🎱 Você está na fila${s}! Assim que outro jogador entrar na mesma fila, a partida começa sozinha.`);
@@ -588,6 +630,7 @@ const UI = (() => {
       online.bestOf = m.bestOf || 1;
       online.stake = m.stake || 0;
       online.oppName = m.name || '';
+      notify('Adversário encontrado!', `${m.name || 'Jogador'} aceitou — a partida vai começar${m.stake ? ` valendo 💰 ${m.stake}` : ''}`);
       if (m.seat === 0) hostStart(0);
       else onlineStatus(`Adversário encontrado: ${m.name || 'Jogador'}! Começando…`);
     });
