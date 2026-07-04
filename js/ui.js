@@ -2,7 +2,7 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
-  const APP_VER = 21; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
+  const APP_VER = 22; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -249,7 +249,7 @@ const UI = (() => {
   // ---------- fim de partida / série ----------
   function matchEnded(winner, reason, match) {
     seriesPending = false;
-    $('#btn-rematch').textContent = 'REVANCHE';
+    $('#btn-rematch').textContent = 'REVANCHE'; $('#btn-rematch').classList.remove('hidden');
     const localSeat = match.localSeat || 0;
     const p2bot = match.players[1].type === 'bot';
     const vsRemote = match.players[1 - localSeat].type === 'remote';
@@ -509,7 +509,7 @@ const UI = (() => {
     seriesPending = false;
     // a aposta sai da carteira na entrada (escrow) — volta em dobro (menos a taxa) se vencer
     if (online.stake > 0) setCoins(coins - online.stake);
-    $('#btn-rematch').textContent = 'REVANCHE';
+    $('#btn-rematch').textContent = 'REVANCHE'; $('#btn-rematch').classList.remove('hidden');
     $(`#pbox${seat} .avatar`).textContent = '😎';
     $(`#pbox${1 - seat} .avatar`).textContent = '🧑';
     $('#overlay-end').classList.add('hidden');
@@ -547,28 +547,50 @@ const UI = (() => {
     NET.send({ t: 'nextgame', balls: rackBalls });
     seriesPending = false;
     online.waiting = false;
-    $('#btn-rematch').textContent = 'REVANCHE';
+    $('#btn-rematch').textContent = 'REVANCHE'; $('#btn-rematch').classList.remove('hidden');
     $('#overlay-end').classList.add('hidden');
     Game.nextGameOnline(rackBalls);
   }
 
   function onlineQuit(msg, walkover) {
     const inGame = online.active;
+    const hud = Game.getHud();
+    const gameOver = hud && hud.state === 'over'; // já acabou normalmente? não mostra 2ª vez
     queueing = false;
-    // adversário fugiu com aposta pendente? quem FICOU leva o pote (menos a taxa)
-    if (walkover && inGame && online.stake > 0 && !online.settled) {
-      const gain = Math.round(online.stake * (1 - RAKE));
-      const prize = online.stake + gain; // sua aposta de volta + 90% da dele
-      setCoins(coins + prize);
-      msg = (msg || 'O adversário saiu.') + ` Você levou o pote: 💰 ${prize}!`;
-      online.settled = true;
+    // adversário abandonou uma partida em andamento? mostra tela de VITÓRIA pra quem ficou
+    const winByAbandon = walkover && inGame && !gameOver;
+    let prize = 0;
+    if (winByAbandon) {
+      // paga o pote só se valendo e ainda não pago (evita pagar duas vezes)
+      if (online.stake > 0 && !online.settled) {
+        const gain = Math.round(online.stake * (1 - RAKE));
+        prize = online.stake + gain; // sua aposta de volta + 90% da dele
+        setCoins(coins + prize);
+        online.settled = true;
+      }
+      stats.w++; saveStats();
     }
     online.active = false;
     online.waiting = false;
-    if (NET.isOn()) NET.send({ t: 'bye' }); // saída voluntária: libera a sala na hora
-    NET.disconnect();
-    if (inGame) {
-      Game.stop();
+    // saída voluntária: manda 'bye' e MANTÉM a conexão aberta (se desconectasse na hora,
+    // o 'bye' se perdia na corrida com o fechamento e o adversário via "caiu" em vez de "abandonou")
+    if (NET.isOn()) NET.send({ t: 'bye' });
+    Game.stop();
+
+    if (winByAbandon) {
+      // tela de vitória, igual a ganhar a partida
+      seriesPending = false;
+      $('#btn-rematch').classList.add('hidden');
+      $('#end-title').textContent = '🏆 Você venceu!';
+      $('#end-reason').textContent = 'O adversário abandonou a partida.';
+      const lines = [];
+      if (prize > 0) {
+        lines.push(`<b class="prize-line">+ 💰 ${prize}</b>`);
+        lines.push(`Saldo: 💰 ${coins}`);
+      }
+      $('#end-lines').innerHTML = lines.map(l => `<div>${l}</div>`).join('');
+      $('#overlay-end').classList.remove('hidden');
+    } else if (inGame) {
       $('#overlay-end').classList.add('hidden');
       showScreen('screen-menu');
       if (msg) displayToast(msg, 5500);
@@ -795,7 +817,7 @@ const UI = (() => {
     NET.on('nextgame', m => {
       seriesPending = false;
       online.waiting = false;
-      $('#btn-rematch').textContent = 'REVANCHE';
+      $('#btn-rematch').textContent = 'REVANCHE'; $('#btn-rematch').classList.remove('hidden');
       $('#overlay-end').classList.add('hidden');
       Game.nextGameOnline(m.balls);
     });
@@ -1140,7 +1162,7 @@ const UI = (() => {
         if (!confirm('Abandonar a série perde a aposta. Sair mesmo assim?')) return;
       }
       seriesPending = false;
-      $('#btn-rematch').textContent = 'REVANCHE';
+      $('#btn-rematch').textContent = 'REVANCHE'; $('#btn-rematch').classList.remove('hidden');
       $('#overlay-end').classList.add('hidden');
       Game.stop();
       showScreen('screen-menu');
