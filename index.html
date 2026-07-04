@@ -13,7 +13,7 @@
   <title>Sinuca Pro</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=19">
+  <link rel="stylesheet" href="css/style.css?v=20">
 </head>
 <body>
 
@@ -39,7 +39,7 @@
       <button class="menu-btn online-btn" id="btn-online">🌐 Amistoso Online</button>
       <button class="menu-btn rank-btn" id="btn-ranking">🏆 Ranking</button>
     </div>
-    <div id="app-ver">versão 19</div>
+    <div id="app-ver">versão 20</div>
   </div>
 
   <!-- ===== RANKING ===== -->
@@ -94,6 +94,7 @@
       </div>
     </div>
     <div id="online-status"></div>
+    <div id="net-debug"></div>
     <button id="btn-online-back" class="back-btn">🏠 Menu principal</button>
   </div>
 
@@ -229,6 +230,16 @@
     </div>
   </div>
 
+  <!-- ===== PARTIDA ENCONTRADA (confirmação) ===== -->
+  <div id="overlay-found" class="hidden">
+    <div class="found-card">
+      <div class="found-emoji">🎱</div>
+      <h2>Partida encontrada!</h2>
+      <div class="found-vs">vs <b id="found-name"></b></div>
+      <div id="found-info"></div>
+    </div>
+  </div>
+
   <!-- ===== CHAT ===== -->
   <div id="overlay-chat" class="hidden">
     <div class="panel chat-panel">
@@ -270,10 +281,10 @@
     </div>
   </div>
 
-  <script src="js/physics.js?v=19"></script>
-  <script src="js/ai.js?v=19"></script>
-  <script src="js/net.js?v=19"></script>
-  <script src="js/game.js?v=19"></script>
-  <script src="js/ui.js?v=19"></script>
+  <script src="js/physics.js?v=20"></script>
+  <script src="js/ai.js?v=20"></script>
+  <script src="js/net.js?v=20"></script>
+  <script src="js/game.js?v=20"></script>
+  <script src="js/ui.js?v=20"></script>
 </body>
 </html>

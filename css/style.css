@@ -587,6 +587,34 @@ button:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
   cursor: pointer;
 }
 
+/* ===== PARTIDA ENCONTRADA ===== */
+#overlay-found {
+  position: fixed;
+  inset: 0;
+  background: rgba(3,8,14,0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 16;
+}
+.found-card {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  animation: found-pop 0.4s ease;
+}
+@keyframes found-pop { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.found-emoji { font-size: 3.5rem; animation: found-spin 0.8s ease; }
+@keyframes found-spin { from { transform: rotate(-180deg); } to { transform: rotate(0); } }
+.found-card h2 { font-size: 1.6rem; color: #f0b429; }
+.found-vs { font-size: 1.2rem; }
+.found-vs b { color: #fff; }
+#found-info { color: #9fb2c4; font-size: 0.9rem; }
+
+#net-debug { color: #40546b; font-size: 0.68rem; font-family: monospace; }
+
 /* ===== CHAT E REPORTE ===== */
 .pbox { position: relative; }
 .bubble {

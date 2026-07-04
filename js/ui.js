@@ -2,7 +2,7 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
-  const APP_VER = 19; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
+  const APP_VER = 20; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -435,17 +435,38 @@ const UI = (() => {
   let reconTries = 0;        // tentativas de reconexão
 
   // conecta e se identifica no servidor (apelido + id do ranking + versão)
+  // com timeout: se não abrir em 15s (servidor grátis dormindo/rede ruim), avisa
   function ensureHello(cb) {
+    let done = false;
+    const to = setTimeout(() => {
+      if (done) return;
+      done = true;
+      netDebug('conexão demorou');
+      cb(false);
+    }, 15000);
     NET.connect(ok => {
-      if (!ok) { cb(false); return; }
+      if (done) return;
+      done = true;
+      clearTimeout(to);
+      if (!ok) { netDebug('conexão falhou'); cb(false); return; }
       const el = $('#nick');
       const digitado = el && el.value.trim() ? el.value.trim() : myNick;
       myNick = (digitado || 'Jogador').slice(0, 14);
       localStorage.setItem('sinuca_nick', myNick);
       NET.send({ t: 'hello', id: myId, name: myNick, v: APP_VER });
+      netDebug('conectado');
       cb(true);
     });
   }
+
+  // linha de diagnóstico (ajuda a achar onde trava no celular)
+  let lastEvt = '—';
+  function netDebug(evt) {
+    if (evt) lastEvt = evt;
+    const el = $('#net-debug');
+    if (el) el.textContent = `📡 ${NET.isOn() ? 'conectado' : 'desligado'} · ${lastEvt} · v${APP_VER}`;
+  }
+  setInterval(() => { if (!$('#screen-online').classList.contains('hidden')) netDebug(); }, 1500);
 
   function onlineStatus(msg, big) {
     const el = $('#online-status');
@@ -587,7 +608,7 @@ const UI = (() => {
       if (!stakeOk()) return;
       onlineStatus('Conectando… (a primeira conexão pode levar alguns segundos)');
       ensureHello(ok => {
-        if (!ok) { onlineStatus('Servidor não encontrado. Abra o jogo pelo link do servidor.'); return; }
+        if (!ok) { onlineStatus('⚠ O servidor demorou a responder (ele "dorme" quando ninguém joga). Toque em Criar sala de novo.'); return; }
         NET.send({ t: 'create', code: want, stake: online.stake });
       });
     });
@@ -598,9 +619,11 @@ const UI = (() => {
       readOnlineFormat();
       if (!stakeOk()) return;
       onlineStatus('Conectando… (a primeira conexão pode levar alguns segundos)');
+      netDebug('conectando');
       lastQueue = { mode: online.mode, bestOf: online.bestOf, stake: online.stake };
       ensureHello(ok => {
-        if (!ok) { onlineStatus('Servidor não encontrado. Abra o jogo pelo link do servidor.'); return; }
+        if (!ok) { onlineStatus('⚠ O servidor demorou a responder (ele "dorme" quando ninguém joga). Toque em Entrar na fila de novo.'); return; }
+        netDebug('enviando fila');
         NET.send({ t: 'queue', ...lastQueue });
       });
     });
@@ -667,6 +690,7 @@ const UI = (() => {
     NET.on('queued', m => {
       queueing = true;
       keepAwake();
+      netDebug('na fila, esperando');
       const s = m.stake > 0 ? ` valendo 💰 ${m.stake}` : '';
       onlineStatus(`🎱 Você está na fila${s}! Assim que outro jogador entrar, a partida começa automaticamente (fica de olho pra não perder no tempo).`);
       $('#btn-cancel-queue').classList.remove('hidden');
@@ -674,6 +698,7 @@ const UI = (() => {
 
     // achou adversário: os dois precisam ACEITAR em 20s
     let acceptTimer = null;
+    let foundTimer = null;
     let acceptCtx = 'queue'; // 'queue' = fila · 'rematch' = convite de revanche
     NET.on('found', m => {
       acceptCtx = 'queue';
@@ -732,9 +757,17 @@ const UI = (() => {
       online.bestOf = m.bestOf || 1;
       online.stake = m.stake || 0;
       online.oppName = m.name || '';
+      netDebug('ACHOU! vs ' + (m.name || '?'));
       Sfx.ding();
       notify('Partida encontrada!', `Jogando contra ${m.name || 'Jogador'}${m.stake ? ` valendo 💰 ${m.stake}` : ''}`);
-      onlineStatus(`🎱 Adversário: ${m.name || 'Jogador'} — começando…`);
+      onlineStatus(`🎱 Adversário encontrado: ${m.name || 'Jogador'}!`);
+      // confirmação visível: aparece pros DOIS antes da mesa
+      $('#found-name').textContent = m.name || 'Jogador';
+      $('#found-info').textContent = (m.mode === 'tresbolas' ? '3 Bolas' : '8 Ball') +
+        (m.stake ? ` · valendo 💰 ${m.stake}` : ' · amistoso');
+      $('#overlay-found').classList.remove('hidden');
+      clearTimeout(foundTimer);
+      foundTimer = setTimeout(() => $('#overlay-found').classList.add('hidden'), 2600);
       if (m.seat === 0) hostStart(0);
     });
     NET.on('pts', m => {
@@ -790,6 +823,7 @@ const UI = (() => {
 
     // conexão caiu (tela bloqueou, trocou de app): NÃO desiste — reconecta e volta pro jogo
     NET.on('drop', () => {
+      netDebug('conexão caiu');
       if ((online.active && !online.settled) || queueing) {
         displayToast('📶 Conexão caiu — reconectando…', 4000);
         reconTries = 0;
