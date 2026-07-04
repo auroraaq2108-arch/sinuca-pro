@@ -2,6 +2,7 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
+  const APP_VER = 16; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -433,7 +434,7 @@ const UI = (() => {
   let lastQueue = null;      // preferências da última fila (pra re-entrar após queda)
   let reconTries = 0;        // tentativas de reconexão
 
-  // conecta e se identifica no servidor (apelido + id do ranking)
+  // conecta e se identifica no servidor (apelido + id do ranking + versão)
   function ensureHello(cb) {
     NET.connect(ok => {
       if (!ok) { cb(false); return; }
@@ -441,7 +442,7 @@ const UI = (() => {
       const digitado = el && el.value.trim() ? el.value.trim() : myNick;
       myNick = (digitado || 'Jogador').slice(0, 14);
       localStorage.setItem('sinuca_nick', myNick);
-      NET.send({ t: 'hello', id: myId, name: myNick });
+      NET.send({ t: 'hello', id: myId, name: myNick, v: APP_VER });
       cb(true);
     });
   }
@@ -555,9 +556,6 @@ const UI = (() => {
   function bindOnline() {
     $('#btn-online').addEventListener('click', () => openOnline(null, true)); // amistoso: sem aposta
     $('#btn-valendo').addEventListener('click', () => openOnline('100', false));
-
-    // conecta em silêncio pro letreiro de vitórias aparecer já no menu
-    if (NET.available()) ensureHello(() => {});
     $('#btn-online-back').addEventListener('click', () => { onlineQuit(); showScreen('screen-menu'); });
     $('#btn-ranking').addEventListener('click', openRanking);
     $('#btn-ranking-back').addEventListener('click', () => showScreen('screen-menu'));
@@ -628,6 +626,18 @@ const UI = (() => {
         if (!ok) { onlineStatus('Servidor não encontrado. Abra o jogo pelo link do servidor.'); return; }
         NET.send({ t: 'join', code });
       });
+    });
+
+    // servidor avisou que este jogo está numa versão velha: recarrega uma vez
+    NET.on('reload', () => {
+      if (sessionStorage.getItem('sinuca_reloaded') === String(APP_VER)) {
+        // já recarreguei e ainda veio velho: cache teimoso, avisa em vez de virar loop
+        displayToast('⚠ Feche e reabra o jogo (o navegador está segurando uma versão antiga).', 8000);
+        return;
+      }
+      sessionStorage.setItem('sinuca_reloaded', String(APP_VER));
+      displayToast('Atualizando o jogo…', 2000);
+      setTimeout(() => location.reload(), 400);
     });
 
     // mensagens do servidor
@@ -1097,6 +1107,9 @@ const UI = (() => {
     bindOnline();
     bindChat();
     bindReport();
+
+    // conecta em silêncio (letreiro de vitórias + checagem de versão) já no menu
+    if (NET.available()) ensureHello(() => {});
   });
 
   return { toast, refreshHud, refreshControls, matchEnded, gameEnded, updateTimer };

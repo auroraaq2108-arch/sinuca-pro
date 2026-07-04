@@ -21,6 +21,10 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
+// versão atual do jogo: cliente com número menor é forçado a recarregar
+// (IMPORTANTE: ao mexer em js/css, bump aqui + ?v= + "versão N" no index.html)
+const APP_VER = 16;
+
 // senha da página de reportes do dono: /reports?senha=...
 const ADMIN_PASS = process.env.ADMIN_PASS || 'dono-sinuca-2026';
 
@@ -227,6 +231,11 @@ server.on('upgrade', (req, socket) => {
 
     // identificação do jogador (para o ranking e a reconexão)
     if (msg.t === 'hello') {
+      // cliente desatualizado (versão velha em cache): manda recarregar sozinho
+      if (typeof msg.v === 'number' && msg.v < APP_VER) {
+        conn.send(JSON.stringify({ t: 'reload' }));
+        return;
+      }
       const id = String(msg.id || '').slice(0, 40);
       if (!id) return;
       conn.playerId = id;
