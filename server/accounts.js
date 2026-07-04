@@ -1,0 +1,164 @@
+// accounts.js — contas de jogador (email/senha), carteira e ranking no servidor.
+// Sem dependências externas: senha via scrypt (embutido no Node).
+// Guarda em data/accounts.json (ATENÇÃO: na nuvem grátis o disco é efêmero — some
+// quando o servidor reinicia; trocar por banco de verdade antes do dinheiro real).
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+const DIR = path.join(__dirname, 'data');
+const FILE = path.join(DIR, 'accounts.json');
+
+let db = { users: {}, byEmail: {}, byRef: {} };
+try {
+  const loaded = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+  db = { users: loaded.users || {}, byEmail: loaded.byEmail || {}, byRef: loaded.byRef || {} };
+} catch (e) { /* primeiro uso */ }
+
+const sessions = new Map(); // token -> userId (em memória; cai no restart, tudo bem)
+
+let saveTimer = null;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      fs.mkdirSync(DIR, { recursive: true });
+      fs.writeFileSync(FILE, JSON.stringify(db));
+    } catch (e) { console.log('não consegui salvar contas:', e.message); }
+  }, 300);
+}
+
+const hashPw = (pw, salt) => crypto.scryptSync(pw, salt, 64).toString('hex');
+const token = () => crypto.randomBytes(24).toString('hex');
+const uid = () => 'u' + crypto.randomBytes(8).toString('hex');
+function refCode() {
+  const C = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c;
+  do { c = ''; for (let i = 0; i < 6; i++) c += C[(Math.random() * C.length) | 0]; } while (db.byRef[c]);
+  return c;
+}
+
+const normEmail = e => String(e || '').trim().toLowerCase();
+const cleanNick = n => String(n || '').trim().slice(0, 14);
+const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+
+// dados que o cliente pode ver (nunca a senha/salt)
+function pub(u) {
+  return {
+    id: u.id, nick: u.nick, email: u.email,
+    coins: u.coins, w: u.w, l: u.l, pts: u.pts,
+    refCode: u.refCode, refCount: u.refCount || 0, refEarn: u.refEarn || 0,
+  };
+}
+
+function register({ email, password, nick, ref }) {
+  email = normEmail(email);
+  nick = cleanNick(nick);
+  if (!validEmail(email)) return { err: 'Email inválido' };
+  if (String(password || '').length < 4) return { err: 'A senha precisa de pelo menos 4 caracteres' };
+  if (!nick) return { err: 'Escolha um apelido' };
+  if (db.byEmail[email]) return { err: 'Esse email já está cadastrado — faça login' };
+
+  const id = uid();
+  const salt = crypto.randomBytes(16).toString('hex');
+  const now = Date.now();
+  const refBy = ref && db.byRef[String(ref).toUpperCase()] ? String(ref).toUpperCase() : null;
+  const user = {
+    id, email, nick, salt, pass: hashPw(password, salt),
+    coins: 500, w: 0, l: 0, pts: 1000,
+    hours: 0, logins: 1, createdAt: now, lastLogin: now,
+    refCode: refCode(), refBy, refCount: 0, refEarn: 0,
+  };
+  db.users[id] = user;
+  db.byEmail[email] = id;
+  db.byRef[user.refCode] = id;
+  // bônus de indicação: quem trouxe ganha moedas de teste + contador
+  if (refBy) {
+    const host = db.users[db.byRef[refBy]];
+    if (host) { host.refCount = (host.refCount || 0) + 1; host.refEarn = (host.refEarn || 0) + 100; host.coins += 100; }
+  }
+  save();
+  const t = token();
+  sessions.set(t, id);
+  return { token: t, user: pub(user) };
+}
+
+function login({ email, password }) {
+  email = normEmail(email);
+  const id = db.byEmail[email];
+  const user = id && db.users[id];
+  if (!user) return { err: 'Email não cadastrado' };
+  if (hashPw(password, user.salt) !== user.pass) return { err: 'Senha incorreta' };
+  user.logins = (user.logins || 0) + 1;
+  user.lastLogin = Date.now();
+  save();
+  const t = token();
+  sessions.set(t, id);
+  return { token: t, user: pub(user) };
+}
+
+// login automático por token guardado no aparelho
+function resume(t) {
+  const id = sessions.get(t);
+  const user = id && db.users[id];
+  return user ? { token: t, user: pub(user) } : { err: 'sessão expirada' };
+}
+
+const byId = id => db.users[id] || null;
+const userByToken = t => { const id = sessions.get(t); return id ? db.users[id] : null; };
+
+function setCoins(id, coins) {
+  const u = db.users[id];
+  if (!u) return;
+  u.coins = Math.max(0, Math.round(coins));
+  save();
+}
+
+// resultado de partida valendo ranking (Elo K=32, começa em 1000)
+function recordResult(winnerId, loserId) {
+  const w = db.users[winnerId], l = db.users[loserId];
+  if (!w || !l || w === l) return null;
+  const expected = 1 / (1 + Math.pow(10, (l.pts - w.pts) / 400));
+  const d = Math.max(4, Math.round(32 * (1 - expected)));
+  w.pts += d; l.pts = Math.max(0, l.pts - d);
+  w.w = (w.w || 0) + 1; l.l = (l.l || 0) + 1;
+  save();
+  return d;
+}
+
+function addPlayTime(id, seconds) {
+  const u = db.users[id];
+  if (!u) return;
+  u.hours = (u.hours || 0) + seconds / 3600;
+  save();
+}
+
+function top(n = 20) {
+  return Object.values(db.users)
+    .sort((a, b) => b.pts - a.pts)
+    .slice(0, n)
+    .map(u => ({ nick: u.nick, pts: u.pts, w: u.w, l: u.l }));
+}
+
+// resumo para o painel do dono
+function adminStats() {
+  const users = Object.values(db.users);
+  const now = Date.now();
+  const dia = 24 * 3600 * 1000;
+  return {
+    total: users.length,
+    ativos24h: users.filter(u => now - u.lastLogin < dia).length,
+    horasTotais: Math.round(users.reduce((s, u) => s + (u.hours || 0), 0)),
+    maisHoras: users.slice().sort((a, b) => (b.hours || 0) - (a.hours || 0)).slice(0, 10)
+      .map(u => ({ nick: u.nick, horas: +(u.hours || 0).toFixed(1), logins: u.logins, pts: u.pts })),
+    maisLogins: users.slice().sort((a, b) => (b.logins || 0) - (a.logins || 0)).slice(0, 10)
+      .map(u => ({ nick: u.nick, logins: u.logins, horas: +(u.hours || 0).toFixed(1) })),
+    afiliados: users.filter(u => (u.refCount || 0) > 0).sort((a, b) => b.refCount - a.refCount).slice(0, 10)
+      .map(u => ({ nick: u.nick, indicados: u.refCount, ganhou: u.refEarn })),
+  };
+}
+
+module.exports = {
+  register, login, resume, byId, userByToken, pub,
+  setCoins, recordResult, addPlayTime, top, adminStats,
+};

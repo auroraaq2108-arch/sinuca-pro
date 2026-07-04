@@ -72,6 +72,32 @@ h1 {
   font-family: inherit;
 }
 #stats { color: #7d92a8; font-size: 0.85rem; }
+
+/* ===== CADASTRO / LOGIN ===== */
+.auth-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(340px, 90vw);
+  background: linear-gradient(180deg, #142c44, #0e2033);
+  border: 1px solid #2a4a6b;
+  border-radius: 16px;
+  padding: 22px;
+}
+.auth-input {
+  background: #0a1826;
+  border: 1px solid #2a4a6b;
+  border-radius: 10px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 12px 14px;
+}
+.auth-input::placeholder { color: #5d7a99; }
+#auth-error { color: #ff6b6b; font-size: 0.85rem; text-align: center; min-height: 18px; }
+#auth-error.ok { color: #2ec46e; }
+#app-ver-auth, #app-ver { color: #40546b; font-size: 0.7rem; }
+#menu-links { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 #feed-line { color: #9fb2c4; font-size: 0.82rem; min-height: 20px; }
 #app-ver { color: #40546b; font-size: 0.7rem; }
 #feed-line b { color: #f0b429; }

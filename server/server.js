@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { acceptKey, wrap } = require('./ws-mini');
+const accounts = require('./accounts');
 
 const PORT = process.env.PORT || 8080;
 const ROOT = path.join(__dirname, '..'); // pasta sinuca/
@@ -23,13 +24,83 @@ const MIME = {
 
 // versão atual do jogo: cliente com número menor é forçado a recarregar
 // (IMPORTANTE: ao mexer em js/css, bump aqui + ?v= + "versão N" no index.html)
-const APP_VER = 22;
+const APP_VER = 23;
 
 // senha da página de reportes do dono: /reports?senha=...
 const ADMIN_PASS = process.env.ADMIN_PASS || 'dono-sinuca-2026';
 
+// lê o corpo JSON de um POST (com limite de tamanho)
+function readJson(req, cb) {
+  let body = '';
+  req.on('data', c => { body += c; if (body.length > 4000) req.destroy(); });
+  req.on('end', () => { try { cb(JSON.parse(body)); } catch (e) { cb(null); } });
+}
+function sendJson(res, code, obj) {
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(obj));
+}
+
 const server = http.createServer((req, res) => {
   const url = req.url || '/';
+
+  // ---- contas: cadastro / login / sessão ----
+  if (req.method === 'POST' && url === '/register') {
+    readJson(req, d => {
+      if (!d) return sendJson(res, 400, { err: 'dados inválidos' });
+      const r = accounts.register(d);
+      sendJson(res, r.err ? 400 : 200, r);
+    });
+    return;
+  }
+  if (req.method === 'POST' && url === '/login') {
+    readJson(req, d => {
+      if (!d) return sendJson(res, 400, { err: 'dados inválidos' });
+      const r = accounts.login(d);
+      sendJson(res, r.err ? 400 : 200, r);
+    });
+    return;
+  }
+  if (req.method === 'POST' && url === '/resume') {
+    readJson(req, d => {
+      if (!d || !d.token) return sendJson(res, 400, { err: 'sem token' });
+      const r = accounts.resume(d.token);
+      sendJson(res, r.err ? 401 : 200, r);
+    });
+    return;
+  }
+  // salva o saldo de moedas de teste na conta (client-trusted por ora: só moeda de teste)
+  if (req.method === 'POST' && url === '/wallet') {
+    readJson(req, d => {
+      const u = d && d.token && accounts.userByToken(d.token);
+      if (!u) return sendJson(res, 401, { err: 'não logado' });
+      if (typeof d.coins === 'number') accounts.setCoins(u.id, d.coins);
+      sendJson(res, 200, { coins: accounts.byId(u.id).coins });
+    });
+    return;
+  }
+
+  // ---- painel do dono: métricas de jogadores ----
+  if (url.split('?')[0] === '/admin') {
+    const senha = (url.split('senha=')[1] || '').split('&')[0];
+    if (senha !== ADMIN_PASS) { res.writeHead(403); res.end('403 - senha errada'); return; }
+    const s = accounts.adminStats();
+    const esc = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const tbl = (title, rows, cols) =>
+      `<h2>${title}</h2><table><tr>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr>` +
+      (rows.length ? rows.map(r => `<tr>${cols.map(c => `<td>${esc(r[c[1]])}</td>`).join('')}</tr>`).join('') : '<tr><td colspan="9">—</td></tr>') +
+      '</table>';
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Painel — Sinuca Pro</title>
+<style>body{font-family:system-ui;background:#0a1826;color:#e9eef4;padding:16px}h1{color:#f0b429}h2{color:#f0b429;font-size:1.1rem;margin-top:22px}table{border-collapse:collapse;width:100%;margin-top:6px}td,th{border:1px solid #2a4a6b;padding:7px;text-align:left}th{background:#142c44}.big{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0}.card{background:#142c44;border:1px solid #2a4a6b;border-radius:10px;padding:14px 20px}.card b{font-size:1.8rem;color:#f0b429;display:block}</style>
+</head><body><h1>📊 Painel Sinuca Pro</h1>
+<div class="big"><div class="card"><b>${s.total}</b>cadastrados</div><div class="card"><b>${s.ativos24h}</b>ativos (24h)</div><div class="card"><b>${s.horasTotais}h</b>jogadas no total</div></div>
+${tbl('⏱ Mais horas jogadas', s.maisHoras, [['Apelido', 'nick'], ['Horas', 'horas'], ['Logins', 'logins'], ['Pontos', 'pts']])}
+${tbl('🔁 Mais logins', s.maisLogins, [['Apelido', 'nick'], ['Logins', 'logins'], ['Horas', 'horas']])}
+${tbl('🤝 Afiliados', s.afiliados, [['Apelido', 'nick'], ['Indicados', 'indicados'], ['Ganhou (moedas)', 'ganhou']])}
+<p style="color:#7d92a8;margin-top:20px">Atenção: no plano grátis os dados somem quando o servidor reinicia. Trocar por banco permanente antes do dinheiro real.</p>
+</body></html>`);
+    return;
+  }
 
   // jogadores enviam reportes de erro
   if (req.method === 'POST' && url === '/report') {

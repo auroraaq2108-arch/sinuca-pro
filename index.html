@@ -13,12 +13,30 @@
   <title>Sinuca Pro</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=22">
+  <link rel="stylesheet" href="css/style.css?v=23">
 </head>
 <body>
 
+  <!-- ===== CADASTRO / LOGIN ===== -->
+  <div id="screen-auth" class="screen">
+    <div class="logo">
+      <span class="logo-ball">🎱</span>
+      <h1>SINUCA <span class="gold">PRO</span></h1>
+    </div>
+    <div class="subtitle" id="auth-subtitle">Crie sua conta pra jogar e guardar seu progresso</div>
+    <div class="auth-box">
+      <input id="auth-nick" class="auth-input" maxlength="14" placeholder="apelido" autocomplete="off">
+      <input id="auth-email" class="auth-input" type="email" placeholder="email" autocomplete="email">
+      <input id="auth-pass" class="auth-input" type="password" placeholder="senha" autocomplete="current-password">
+      <div id="auth-error"></div>
+      <button id="auth-submit" class="menu-btn gold-btn">CRIAR CONTA</button>
+      <button id="auth-toggle" class="link">já tenho conta — entrar</button>
+    </div>
+    <div id="app-ver-auth"></div>
+  </div>
+
   <!-- ===== MENU PRINCIPAL ===== -->
-  <div id="screen-menu" class="screen">
+  <div id="screen-menu" class="screen hidden">
     <div class="logo">
       <span class="logo-ball">🎱</span>
       <h1>SINUCA <span class="gold">PRO</span></h1>
@@ -31,7 +49,11 @@
     </div>
     <div id="stats"></div>
     <div id="feed-line"></div>
-    <button id="btn-report" class="link">🐞 Achou um erro? Reporta aqui</button>
+    <div id="menu-links">
+      <button id="btn-report" class="link">🐞 Reportar erro</button>
+      <button id="btn-invite" class="link">🤝 Convidar amigo</button>
+      <button id="btn-logout" class="link">sair da conta</button>
+    </div>
 
     <div class="menu-buttons">
       <button class="menu-btn" data-setup="treino">🎯 Treinamento vs Bot</button>
@@ -281,10 +303,10 @@
     </div>
   </div>
 
-  <script src="js/physics.js?v=22"></script>
-  <script src="js/ai.js?v=22"></script>
-  <script src="js/net.js?v=22"></script>
-  <script src="js/game.js?v=22"></script>
-  <script src="js/ui.js?v=22"></script>
+  <script src="js/physics.js?v=23"></script>
+  <script src="js/ai.js?v=23"></script>
+  <script src="js/net.js?v=23"></script>
+  <script src="js/game.js?v=23"></script>
+  <script src="js/ui.js?v=23"></script>
 </body>
 </html>

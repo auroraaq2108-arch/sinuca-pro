@@ -2,7 +2,7 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
-  const APP_VER = 22; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
+  const APP_VER = 23; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -103,14 +103,118 @@ const UI = (() => {
   })();
 
   // ---------- moedas / estatísticas ----------
+  let walletTimer = 0;
   function setCoins(v) {
     coins = Math.max(0, Math.round(v));
     localStorage.setItem('sinuca_coins', String(coins));
     $('#coins').textContent = coins;
+    // logado? guarda o saldo na conta (no servidor), sem spam
+    if (authToken) {
+      clearTimeout(walletTimer);
+      walletTimer = setTimeout(() => {
+        fetch('/wallet', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: authToken, coins }) }).catch(() => {});
+      }, 800);
+    }
   }
   function saveStats() {
     localStorage.setItem('sinuca_stats', JSON.stringify(stats));
     $('#stats').textContent = `Vitórias: ${stats.w} · Derrotas: ${stats.l}`;
+  }
+
+  // ---------- contas (cadastro / login) ----------
+  let account = null;
+  let authToken = localStorage.getItem('sinuca_token') || null;
+  let authMode = 'register'; // register | login
+
+  function applyAccount(data) {
+    account = data.user;
+    authToken = data.token;
+    localStorage.setItem('sinuca_token', authToken);
+    myNick = account.nick;
+    localStorage.setItem('sinuca_nick', myNick);
+    coins = account.coins;
+    localStorage.setItem('sinuca_coins', String(coins));
+    $('#coins').textContent = coins;
+    showScreen('screen-menu');
+  }
+
+  function authError(msg, good) {
+    const el = $('#auth-error');
+    el.textContent = msg || '';
+    el.classList.toggle('ok', !!good);
+  }
+
+  function setAuthMode(mode) {
+    authMode = mode;
+    const reg = mode === 'register';
+    $('#auth-nick').classList.toggle('hidden', !reg);
+    $('#auth-submit').textContent = reg ? 'CRIAR CONTA' : 'ENTRAR';
+    $('#auth-toggle').textContent = reg ? 'já tenho conta — entrar' : 'criar uma conta nova';
+    $('#auth-subtitle').textContent = reg
+      ? 'Crie sua conta pra jogar e guardar seu progresso'
+      : 'Bem-vindo de volta! Entre na sua conta';
+    authError('');
+  }
+
+  function submitAuth() {
+    const email = $('#auth-email').value.trim();
+    const password = $('#auth-pass').value;
+    const nick = $('#auth-nick').value.trim();
+    if (!email || !password) { authError('Preencha email e senha'); return; }
+    if (authMode === 'register' && !nick) { authError('Escolha um apelido'); return; }
+    authError('conectando…', true);
+    $('#auth-submit').disabled = true;
+    const path = authMode === 'register' ? '/register' : '/login';
+    const body = authMode === 'register' ? { email, password, nick, ref: pendingRef } : { email, password };
+    fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(r => r.json().then(j => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        $('#auth-submit').disabled = false;
+        if (!ok || j.err) { authError(j.err || 'não deu certo, tente de novo'); return; }
+        pendingRef = null;
+        applyAccount(j);
+      })
+      .catch(() => { $('#auth-submit').disabled = false; authError('sem conexão com o servidor'); });
+  }
+
+  function logout() {
+    localStorage.removeItem('sinuca_token');
+    authToken = null;
+    account = null;
+    $('#auth-email').value = '';
+    $('#auth-pass').value = '';
+    setAuthMode('login');
+    showScreen('screen-auth');
+  }
+
+  // link de indicação recebido na URL (?ref=CODE)
+  let pendingRef = null;
+  (function () {
+    const m = (location.search || '').match(/[?&]ref=([A-Za-z0-9]{4,8})/);
+    if (m) pendingRef = m[1].toUpperCase();
+  })();
+
+  // ao abrir: tenta entrar com o token salvo; senão mostra cadastro/login
+  function bootAuth() {
+    if (!NET.available()) {
+      // aberto pelo arquivo (sem servidor): joga offline, sem conta
+      showScreen('screen-menu');
+      return;
+    }
+    if (authToken) {
+      fetch('/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: authToken }) })
+        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        .then(({ ok, j }) => {
+          if (ok && !j.err) applyAccount(j);
+          else { logout(); }
+        })
+        .catch(() => { showScreen('screen-menu'); }); // servidor fora do ar: entra offline
+    } else {
+      setAuthMode(pendingRef ? 'register' : 'register');
+      if (pendingRef) authError('🤝 Você foi convidado! Crie sua conta.', true);
+      showScreen('screen-auth');
+    }
   }
 
   // ---------- telas ----------
@@ -1065,6 +1169,28 @@ const UI = (() => {
       if (Game.impact) Game.impact(v, kind);
     };
     document.addEventListener('pointerdown', () => Sfx.ensure(), { once: true });
+
+    // número de versão automático nas telas
+    $('#app-ver').textContent = 'versão ' + APP_VER;
+    $('#app-ver-auth').textContent = 'versão ' + APP_VER;
+
+    // ---- cadastro / login ----
+    setAuthMode('register');
+    $('#auth-submit').addEventListener('click', submitAuth);
+    $('#auth-pass').addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); });
+    $('#auth-toggle').addEventListener('click', () => setAuthMode(authMode === 'register' ? 'login' : 'register'));
+    $('#btn-logout').addEventListener('click', () => {
+      if (confirm('Sair da sua conta neste aparelho?')) logout();
+    });
+    $('#btn-invite').addEventListener('click', () => {
+      if (!account) { displayToast('Entre na sua conta primeiro.', 3500); return; }
+      const link = location.origin + '/?ref=' + account.refCode;
+      const txt = `🎱 Vem jogar Sinuca Pro comigo! Cadastra pelo meu link: ${link}`;
+      if (navigator.share) navigator.share({ text: txt }).catch(() => {});
+      else if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => displayToast('Link copiado! Mande pros amigos 🤝', 4000)).catch(() => displayToast(link, 6000));
+      else displayToast(link, 8000);
+    });
+    bootAuth();
 
     document.querySelectorAll('.menu-btn[data-setup]').forEach(b =>
       b.addEventListener('click', () => openSetup(b.dataset.setup)));
