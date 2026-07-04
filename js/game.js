@@ -62,6 +62,17 @@ const Game = (() => {
   }
 
   // ---------- montagem das bolas ----------
+  // pequena variação aleatória: cada break fica único (mesa real nunca é perfeita).
+  // No break, a física é caótica — fração de milímetro muda todo o resultado.
+  function jitter(bs) {
+    for (let i = 1; i < bs.length; i++) {          // 0 = bola branca, não mexe
+      bs[i].x += (Math.random() - 0.5) * 0.4;
+      bs[i].y += (Math.random() - 0.5) * 0.4;
+    }
+    bs[0].y += (Math.random() - 0.5) * 6;          // branca sai de um ponto levemente diferente
+    return bs;
+  }
+
   function rack(mode) {
     const bs = [mkBall(0, 200, H / 2)];
     const fx = 600, dx = Math.sqrt(3) * R + 0.6, dy = 2 * R + 0.6;
@@ -71,7 +82,7 @@ const Game = (() => {
       bs.push(mkBall(ns[0], fx, H / 2));
       bs.push(mkBall(ns[1], fx + dx, H / 2 - (R + 0.3)));
       bs.push(mkBall(ns[2], fx + dx, H / 2 + (R + 0.3)));
-      return bs;
+      return jitter(bs);
     }
     if (mode === '8ball') {
       const g1 = shuffle([1, 2, 3, 4, 5, 6, 7]);
@@ -102,7 +113,7 @@ const Game = (() => {
         }
       }
     }
-    return bs;
+    return jitter(bs);
   }
 
   // ---------- fluxo da partida ----------

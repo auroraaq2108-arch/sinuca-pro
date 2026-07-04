@@ -23,7 +23,7 @@ const MIME = {
 
 // versão atual do jogo: cliente com número menor é forçado a recarregar
 // (IMPORTANTE: ao mexer em js/css, bump aqui + ?v= + "versão N" no index.html)
-const APP_VER = 16;
+const APP_VER = 17;
 
 // senha da página de reportes do dono: /reports?senha=...
 const ADMIN_PASS = process.env.ADMIN_PASS || 'dono-sinuca-2026';
