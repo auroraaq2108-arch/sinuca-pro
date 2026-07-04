@@ -2,7 +2,7 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
-  const APP_VER = 20; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
+  const APP_VER = 21; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -92,10 +92,12 @@ const UI = (() => {
     }
     // "tim-tim" de alerta (partida encontrada) — toca mesmo sem permissão de notificação
     function ding() {
-      ensure();
-      if (!ac) return;
-      play(880, 0.35, 0.18, 'sine');
-      setTimeout(() => { if (ac) play(1318, 0.35, 0.3, 'sine'); }, 150);
+      try {
+        ensure();
+        if (!ac) return;
+        tone(880, 0.35, 0.18, 'sine');
+        setTimeout(() => { if (ac) tone(1318, 0.35, 0.3, 'sine'); }, 150);
+      } catch (e) { /* som nunca pode travar o jogo */ }
     }
     return { hit, ensure, ding };
   })();
@@ -758,17 +760,20 @@ const UI = (() => {
       online.stake = m.stake || 0;
       online.oppName = m.name || '';
       netDebug('ACHOU! vs ' + (m.name || '?'));
-      Sfx.ding();
-      notify('Partida encontrada!', `Jogando contra ${m.name || 'Jogador'}${m.stake ? ` valendo 💰 ${m.stake}` : ''}`);
-      onlineStatus(`🎱 Adversário encontrado: ${m.name || 'Jogador'}!`);
-      // confirmação visível: aparece pros DOIS antes da mesa
-      $('#found-name').textContent = m.name || 'Jogador';
-      $('#found-info').textContent = (m.mode === 'tresbolas' ? '3 Bolas' : '8 Ball') +
-        (m.stake ? ` · valendo 💰 ${m.stake}` : ' · amistoso');
-      $('#overlay-found').classList.remove('hidden');
-      clearTimeout(foundTimer);
-      foundTimer = setTimeout(() => $('#overlay-found').classList.add('hidden'), 2600);
+      // CRÍTICO PRIMEIRO: inicia a partida (nada cosmético pode travar isto)
       if (m.seat === 0) hostStart(0);
+      else onlineStatus(`🎱 Adversário encontrado: ${m.name || 'Jogador'} — começando…`);
+      // cosmético depois (som/notificação/confirmação), isolado de erros
+      try {
+        Sfx.ding();
+        notify('Partida encontrada!', `Jogando contra ${m.name || 'Jogador'}${m.stake ? ` valendo 💰 ${m.stake}` : ''}`);
+        $('#found-name').textContent = m.name || 'Jogador';
+        $('#found-info').textContent = (m.mode === 'tresbolas' ? '3 Bolas' : '8 Ball') +
+          (m.stake ? ` · valendo 💰 ${m.stake}` : ' · amistoso');
+        $('#overlay-found').classList.remove('hidden');
+        clearTimeout(foundTimer);
+        foundTimer = setTimeout(() => $('#overlay-found').classList.add('hidden'), 2600);
+      } catch (e) { /* enfeite não pode travar a partida */ }
     });
     NET.on('pts', m => {
       if (m.delta != null) {
