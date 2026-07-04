@@ -2,7 +2,7 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
-  const APP_VER = 17; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
+  const APP_VER = 18; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -507,7 +507,9 @@ const UI = (() => {
   // anfitrião (assento 0) monta a mesa e manda pro convidado
   function hostStart(breaker) {
     if (online.stake > 0 && coins < online.stake) {
-      displayToast(`Moedas insuficientes pra valer 💰 ${online.stake}`, 4500);
+      // não deixa o convidado travado esperando: cancela a partida limpo
+      NET.send({ t: 'bye' });
+      onlineQuit('Você não tinha moedas suficientes — partida cancelada.');
       return;
     }
     const rackBalls = Game.makeRack(online.mode);
@@ -666,7 +668,7 @@ const UI = (() => {
       queueing = true;
       keepAwake();
       const s = m.stake > 0 ? ` valendo 💰 ${m.stake}` : '';
-      onlineStatus(`🎱 Você está na fila${s}! Quando aparecer alguém, você recebe o convite pra ACEITAR.`);
+      onlineStatus(`🎱 Você está na fila${s}! Assim que outro jogador entrar, a partida começa automaticamente (fica de olho pra não perder no tempo).`);
       $('#btn-cancel-queue').classList.remove('hidden');
     });
 
@@ -730,9 +732,10 @@ const UI = (() => {
       online.bestOf = m.bestOf || 1;
       online.stake = m.stake || 0;
       online.oppName = m.name || '';
-      notify('Partida começando!', `${m.name || 'Jogador'} aceitou${m.stake ? ` — valendo 💰 ${m.stake}` : ''}`);
+      Sfx.ding();
+      notify('Partida encontrada!', `Jogando contra ${m.name || 'Jogador'}${m.stake ? ` valendo 💰 ${m.stake}` : ''}`);
+      onlineStatus(`🎱 Adversário: ${m.name || 'Jogador'} — começando…`);
       if (m.seat === 0) hostStart(0);
-      else onlineStatus(`Os dois aceitaram! Começando…`);
     });
     NET.on('pts', m => {
       if (m.delta != null) {

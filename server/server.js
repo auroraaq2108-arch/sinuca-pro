@@ -23,7 +23,7 @@ const MIME = {
 
 // versão atual do jogo: cliente com número menor é forçado a recarregar
 // (IMPORTANTE: ao mexer em js/css, bump aqui + ?v= + "versão N" no index.html)
-const APP_VER = 17;
+const APP_VER = 18;
 
 // senha da página de reportes do dono: /reports?senha=...
 const ADMIN_PASS = process.env.ADMIN_PASS || 'dono-sinuca-2026';
@@ -297,23 +297,29 @@ server.on('upgrade', (req, socket) => {
       return;
     }
 
-    // fila rápida: achou par → os DOIS precisam aceitar em 20s
+    // fila rápida: achou par da mesma modalidade+aposta → conecta na hora
     if (msg.t === 'queue') {
       leave(conn, true);
       unqueue(conn);
-      if (conn.pm) cancelPM(conn.pm, conn);
       const mode = msg.mode === 'tresbolas' ? 'tresbolas' : '8ball';
       const bestOf = [1, 3, 5, 9, 29].includes(msg.bestOf) ? msg.bestOf : (mode === 'tresbolas' ? 9 : 3);
       const stake = [0, 10, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 10;
-      const i = queue.findIndex(q => q.mode === mode && q.stake === stake);
-      if (i >= 0) {
-        const other = queue.splice(i, 1)[0];
-        const pm = { a: other.conn, b: conn, mode, stake, bestOfA: other.bestOf, bestOfB: bestOf, acc: [false, false], timer: null };
-        other.conn.pm = pm;
-        conn.pm = pm;
-        pm.timer = setTimeout(() => cancelPM(pm, null, 'Ninguém aceitou a tempo.'), 20000);
-        other.conn.send(JSON.stringify({ t: 'found', mode, stake, bestOf: other.bestOf, name: conn.playerName }));
-        conn.send(JSON.stringify({ t: 'found', mode, stake, bestOf: other.bestOf, name: other.conn.playerName }));
+      // ignora entradas mortas na fila (conexão caiu) antes de parear
+      let other = null;
+      while (queue.length) {
+        const idx = queue.findIndex(q => q.mode === mode && q.stake === stake);
+        if (idx < 0) break;
+        const cand = queue.splice(idx, 1)[0];
+        if (cand.conn && cand.conn.alive && cand.conn !== conn) { other = cand; break; }
+      }
+      if (other) {
+        const code = 'QM' + (++qmCounter);
+        const room = { seats: [other.conn, conn], reported: true, stake };
+        rooms.set(code, room);
+        other.conn.room = room; other.conn.seat = 0; other.conn.code = code;
+        conn.room = room; conn.seat = 1; conn.code = code;
+        other.conn.send(JSON.stringify({ t: 'matched', seat: 0, mode, bestOf: other.bestOf, stake, name: conn.playerName }));
+        conn.send(JSON.stringify({ t: 'matched', seat: 1, mode, bestOf: other.bestOf, stake, name: other.conn.playerName }));
       } else {
         queue.push({ conn, mode, bestOf, stake });
         conn.send(JSON.stringify({ t: 'queued', stake }));
