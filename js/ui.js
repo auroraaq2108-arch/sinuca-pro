@@ -2,7 +2,7 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
-  const APP_VER = 18; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
+  const APP_VER = 19; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -585,7 +585,7 @@ const UI = (() => {
       const want = $('#create-code').value.trim();
       readOnlineFormat();
       if (!stakeOk()) return;
-      onlineStatus('Conectando…');
+      onlineStatus('Conectando… (a primeira conexão pode levar alguns segundos)');
       ensureHello(ok => {
         if (!ok) { onlineStatus('Servidor não encontrado. Abra o jogo pelo link do servidor.'); return; }
         NET.send({ t: 'create', code: want, stake: online.stake });
@@ -597,7 +597,7 @@ const UI = (() => {
       askNotif();
       readOnlineFormat();
       if (!stakeOk()) return;
-      onlineStatus('Conectando…');
+      onlineStatus('Conectando… (a primeira conexão pode levar alguns segundos)');
       lastQueue = { mode: online.mode, bestOf: online.bestOf, stake: online.stake };
       ensureHello(ok => {
         if (!ok) { onlineStatus('Servidor não encontrado. Abra o jogo pelo link do servidor.'); return; }
@@ -623,7 +623,7 @@ const UI = (() => {
     $('#btn-join-room').addEventListener('click', () => {
       const code = $('#room-code').value.trim().toUpperCase();
       if (code.length < 3) { onlineStatus('Digite a senha da sala (3 a 8 letras/números).'); return; }
-      onlineStatus('Conectando…');
+      onlineStatus('Conectando… (a primeira conexão pode levar alguns segundos)');
       ensureHello(ok => {
         if (!ok) { onlineStatus('Servidor não encontrado. Abra o jogo pelo link do servidor.'); return; }
         NET.send({ t: 'join', code });

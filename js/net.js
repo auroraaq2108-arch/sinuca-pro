@@ -1,8 +1,9 @@
-// net.js — conexão online do jogo (sala com código) via WebSocket
+// net.js — conexão online do jogo (sala com código / fila) via WebSocket
 const NET = (() => {
   let ws = null;
   let connected = false;
   let closing = false;
+  let openCbs = [];     // callbacks esperando a conexão abrir
   const handlers = {};
 
   // online só funciona quando o jogo é aberto pelo servidor (http), não pelo arquivo
@@ -11,21 +12,26 @@ const NET = (() => {
   }
 
   function connect(cb) {
-    if (ws && (ws.readyState === 0 || ws.readyState === 1)) {
-      if (cb) cb(true);
-      return;
-    }
-    let answered = false;
+    // já aberto: responde na hora
+    if (ws && ws.readyState === 1) { if (cb) cb(true); return; }
+    // ainda conectando: NÃO responde já (senão o hello/queue são descartados);
+    // espera a conexão abrir de verdade
+    if (ws && ws.readyState === 0) { if (cb) openCbs.push(cb); return; }
+
+    // cria uma conexão nova
+    openCbs = cb ? [cb] : [];
     try {
       const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
       ws = new WebSocket(proto + location.host);
     } catch (e) {
-      if (cb) cb(false);
+      const cbs = openCbs; openCbs = [];
+      cbs.forEach(c => c(false));
       return;
     }
     ws.onopen = () => {
       connected = true;
-      if (!answered && cb) { answered = true; cb(true); }
+      const cbs = openCbs; openCbs = [];
+      cbs.forEach(c => c(true));
     };
     ws.onmessage = ev => {
       let msg;
@@ -35,7 +41,8 @@ const NET = (() => {
     ws.onclose = () => {
       const was = connected;
       connected = false;
-      if (!answered && cb) { answered = true; cb(false); }
+      const cbs = openCbs; openCbs = [];
+      cbs.forEach(c => c(false));            // fechou antes de abrir: avisa quem esperava
       if (was && !closing && handlers.drop) handlers.drop({ t: 'drop' });
     };
     ws.onerror = () => { /* onclose cuida */ };
@@ -49,6 +56,7 @@ const NET = (() => {
 
   function disconnect() {
     closing = true;
+    openCbs = [];
     try { if (ws) ws.close(); } catch (e) { /* já fechado */ }
     ws = null;
     connected = false;
