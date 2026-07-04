@@ -3,8 +3,12 @@
 // Guarda em data/accounts.json (ATENÇÃO: na nuvem grátis o disco é efêmero — some
 // quando o servidor reinicia; trocar por banco de verdade antes do dinheiro real).
 const crypto = require('crypto');
+const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
+
+const scrypt = promisify(crypto.scrypt);
+const TOKEN_TTL = 30 * 24 * 3600 * 1000; // sessão vale 30 dias
 
 const DIR = path.join(__dirname, 'data');
 const FILE = path.join(DIR, 'accounts.json');
@@ -15,7 +19,13 @@ try {
   db = { users: loaded.users || {}, byEmail: loaded.byEmail || {}, byRef: loaded.byRef || {} };
 } catch (e) { /* primeiro uso */ }
 
-const sessions = new Map(); // token -> userId (em memória; cai no restart, tudo bem)
+const sessions = new Map(); // token -> { id, exp } (em memória; cai no restart, tudo bem)
+
+// limpa sessões vencidas de tempos em tempos
+setInterval(() => {
+  const now = Date.now();
+  for (const [t, s] of sessions) if (s.exp < now) sessions.delete(t);
+}, 3600 * 1000).unref?.();
 
 let saveTimer = null;
 function save() {
@@ -28,8 +38,18 @@ function save() {
   }, 300);
 }
 
-const hashPw = (pw, salt) => crypto.scryptSync(pw, salt, 64).toString('hex');
-const token = () => crypto.randomBytes(24).toString('hex');
+// hash de senha assíncrono (não trava o servidor) — scrypt do próprio Node
+async function hashPw(pw, salt) { return (await scrypt(pw, salt, 64)).toString('hex'); }
+// comparação em tempo constante (evita descobrir a senha pelo tempo de resposta)
+function safeEq(a, b) {
+  const ba = Buffer.from(a, 'hex'), bb = Buffer.from(b, 'hex');
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
+function newToken(id) {
+  const t = crypto.randomBytes(24).toString('hex');
+  sessions.set(t, { id, exp: Date.now() + TOKEN_TTL });
+  return t;
+}
 const uid = () => 'u' + crypto.randomBytes(8).toString('hex');
 function refCode() {
   const C = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -51,11 +71,13 @@ function pub(u) {
   };
 }
 
-function register({ email, password, nick, ref }) {
+async function register({ email, password, nick, ref }) {
   email = normEmail(email);
   nick = cleanNick(nick);
-  if (!validEmail(email)) return { err: 'Email inválido' };
-  if (String(password || '').length < 4) return { err: 'A senha precisa de pelo menos 4 caracteres' };
+  password = String(password || '');
+  if (!validEmail(email) || email.length > 120) return { err: 'Email inválido' };
+  if (password.length < 6) return { err: 'A senha precisa de pelo menos 6 caracteres' };
+  if (password.length > 200) return { err: 'Senha muito longa' };
   if (!nick) return { err: 'Escolha um apelido' };
   if (db.byEmail[email]) return { err: 'Esse email já está cadastrado — faça login' };
 
@@ -64,7 +86,7 @@ function register({ email, password, nick, ref }) {
   const now = Date.now();
   const refBy = ref && db.byRef[String(ref).toUpperCase()] ? String(ref).toUpperCase() : null;
   const user = {
-    id, email, nick, salt, pass: hashPw(password, salt),
+    id, email, nick, salt, pass: await hashPw(password, salt),
     coins: 500, w: 0, l: 0, pts: 1000,
     hours: 0, logins: 1, createdAt: now, lastLogin: now,
     refCode: refCode(), refBy, refCount: 0, refEarn: 0,
@@ -78,34 +100,38 @@ function register({ email, password, nick, ref }) {
     if (host) { host.refCount = (host.refCount || 0) + 1; host.refEarn = (host.refEarn || 0) + 100; host.coins += 100; }
   }
   save();
-  const t = token();
-  sessions.set(t, id);
-  return { token: t, user: pub(user) };
+  return { token: newToken(id), user: pub(user) };
 }
 
-function login({ email, password }) {
+async function login({ email, password }) {
   email = normEmail(email);
+  password = String(password || '');
   const id = db.byEmail[email];
   const user = id && db.users[id];
-  if (!user) return { err: 'Email não cadastrado' };
-  if (hashPw(password, user.salt) !== user.pass) return { err: 'Senha incorreta' };
+  // sempre calcula um hash (mesmo sem usuário) pra não vazar quem existe pelo tempo
+  const salt = user ? user.salt : 'x'.repeat(32);
+  const h = await hashPw(password, salt);
+  if (!user || !safeEq(h, user.pass)) return { err: 'Email ou senha incorretos' };
   user.logins = (user.logins || 0) + 1;
   user.lastLogin = Date.now();
   save();
-  const t = token();
-  sessions.set(t, id);
-  return { token: t, user: pub(user) };
+  return { token: newToken(id), user: pub(user) };
 }
 
 // login automático por token guardado no aparelho
 function resume(t) {
-  const id = sessions.get(t);
-  const user = id && db.users[id];
+  const s = sessions.get(t);
+  if (!s || s.exp < Date.now()) { sessions.delete(t); return { err: 'sessão expirada' }; }
+  const user = db.users[s.id];
   return user ? { token: t, user: pub(user) } : { err: 'sessão expirada' };
 }
 
 const byId = id => db.users[id] || null;
-const userByToken = t => { const id = sessions.get(t); return id ? db.users[id] : null; };
+const userByToken = t => {
+  const s = sessions.get(t);
+  if (!s || s.exp < Date.now()) return null;
+  return db.users[s.id] || null;
+};
 
 function setCoins(id, coins) {
   const u = db.users[id];

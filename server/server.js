@@ -24,10 +24,42 @@ const MIME = {
 
 // versão atual do jogo: cliente com número menor é forçado a recarregar
 // (IMPORTANTE: ao mexer em js/css, bump aqui + ?v= + "versão N" no index.html)
-const APP_VER = 24;
+const APP_VER = 25;
 
-// senha da página de reportes do dono: /reports?senha=...
-const ADMIN_PASS = process.env.ADMIN_PASS || 'dono-sinuca-2026';
+// senha do painel do dono: DEVE vir da variável de ambiente ADMIN_PASS no Render.
+// Sem ela (ou usando a antiga que vazou no repositório), o painel fica DESATIVADO.
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+const ADMIN_ON = ADMIN_PASS.length >= 8 && ADMIN_PASS !== 'dono-sinuca-2026';
+if (!ADMIN_ON) console.log('AVISO: /admin e /reports DESATIVADOS. Defina ADMIN_PASS (8+ caracteres) no Render pra ativar.');
+
+// ---- limite de requisições por IP (anti força-bruta e anti-spam) ----
+const rlStore = new Map();
+function rateOk(key, max, windowMs) {
+  const now = Date.now();
+  const arr = (rlStore.get(key) || []).filter(t => now - t < windowMs);
+  if (arr.length >= max) { rlStore.set(key, arr); return false; }
+  arr.push(now);
+  rlStore.set(key, arr);
+  return true;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, arr] of rlStore) {
+    const keep = arr.filter(t => now - t < 3600000);
+    if (keep.length) rlStore.set(k, keep); else rlStore.delete(k);
+  }
+}, 600000).unref?.();
+function clientIp(req) {
+  const xff = req.headers['x-forwarded-for']; // o Render põe o IP real aqui
+  return (xff ? String(xff).split(',')[0].trim() : req.socket.remoteAddress) || 'unknown';
+}
+
+// cabeçalhos de segurança em toda resposta
+function secHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+}
 
 // lê o corpo JSON de um POST (com limite de tamanho)
 function readJson(req, cb) {
@@ -42,21 +74,25 @@ function sendJson(res, code, obj) {
 
 const server = http.createServer((req, res) => {
   const url = req.url || '/';
+  secHeaders(res);
+  const ip = clientIp(req);
 
   // ---- contas: cadastro / login / sessão ----
   if (req.method === 'POST' && url === '/register') {
+    if (!rateOk('reg:' + ip, 6, 3600000)) return sendJson(res, 429, { err: 'Muitas contas criadas desse aparelho. Tente daqui a pouco.' });
     readJson(req, d => {
       if (!d) return sendJson(res, 400, { err: 'dados inválidos' });
-      const r = accounts.register(d);
-      sendJson(res, r.err ? 400 : 200, r);
+      accounts.register(d).then(r => sendJson(res, r.err ? 400 : 200, r))
+        .catch(() => sendJson(res, 500, { err: 'erro no servidor' }));
     });
     return;
   }
   if (req.method === 'POST' && url === '/login') {
+    if (!rateOk('login:' + ip, 12, 600000)) return sendJson(res, 429, { err: 'Muitas tentativas. Espere alguns minutos e tente de novo.' });
     readJson(req, d => {
       if (!d) return sendJson(res, 400, { err: 'dados inválidos' });
-      const r = accounts.login(d);
-      sendJson(res, r.err ? 400 : 200, r);
+      accounts.login(d).then(r => sendJson(res, r.err ? 400 : 200, r))
+        .catch(() => sendJson(res, 500, { err: 'erro no servidor' }));
     });
     return;
   }
@@ -68,12 +104,14 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
-  // salva o saldo de moedas de teste na conta (client-trusted por ora: só moeda de teste)
+  // salva o saldo de moedas de teste na conta (client-trusted por ora: só moeda de teste;
+  // vira server-authoritative quando entrar dinheiro real). Teto pra evitar valores absurdos.
   if (req.method === 'POST' && url === '/wallet') {
+    if (!rateOk('wallet:' + ip, 120, 60000)) return sendJson(res, 429, { err: 'devagar' });
     readJson(req, d => {
       const u = d && d.token && accounts.userByToken(d.token);
       if (!u) return sendJson(res, 401, { err: 'não logado' });
-      if (typeof d.coins === 'number') accounts.setCoins(u.id, d.coins);
+      if (typeof d.coins === 'number' && d.coins >= 0 && d.coins <= 10000000) accounts.setCoins(u.id, d.coins);
       sendJson(res, 200, { coins: accounts.byId(u.id).coins });
     });
     return;
@@ -81,6 +119,8 @@ const server = http.createServer((req, res) => {
 
   // ---- painel do dono: métricas de jogadores ----
   if (url.split('?')[0] === '/admin') {
+    if (!ADMIN_ON) { res.writeHead(503); res.end('Painel desativado — configure ADMIN_PASS no servidor.'); return; }
+    if (!rateOk('admin:' + ip, 20, 600000)) { res.writeHead(429); res.end('devagar'); return; }
     const senha = (url.split('senha=')[1] || '').split('&')[0];
     if (senha !== ADMIN_PASS) { res.writeHead(403); res.end('403 - senha errada'); return; }
     const s = accounts.adminStats();
@@ -104,6 +144,7 @@ ${tbl('🤝 Afiliados', s.afiliados, [['Apelido', 'nick'], ['Indicados', 'indica
 
   // jogadores enviam reportes de erro
   if (req.method === 'POST' && url === '/report') {
+    if (!rateOk('report:' + ip, 8, 3600000)) return sendJson(res, 429, { ok: false });
     let body = '';
     req.on('data', c => { body += c; if (body.length > 4000) req.destroy(); });
     req.on('end', () => {
@@ -132,6 +173,8 @@ ${tbl('🤝 Afiliados', s.afiliados, [['Apelido', 'nick'], ['Indicados', 'indica
 
   // página do dono: lista os reportes (protegida por senha)
   if (url.split('?')[0] === '/reports') {
+    if (!ADMIN_ON) { res.writeHead(503); res.end('Painel desativado — configure ADMIN_PASS no servidor.'); return; }
+    if (!rateOk('admin:' + ip, 20, 600000)) { res.writeHead(429); res.end('devagar'); return; }
     const senha = (url.split('senha=')[1] || '').split('&')[0];
     if (senha !== ADMIN_PASS) { res.writeHead(403); res.end('403 - senha errada'); return; }
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
