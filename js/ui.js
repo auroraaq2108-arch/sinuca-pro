@@ -2,7 +2,7 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
-  const APP_VER = 23; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
+  const APP_VER = 24; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -1182,14 +1182,8 @@ const UI = (() => {
     $('#btn-logout').addEventListener('click', () => {
       if (confirm('Sair da sua conta neste aparelho?')) logout();
     });
-    $('#btn-invite').addEventListener('click', () => {
-      if (!account) { displayToast('Entre na sua conta primeiro.', 3500); return; }
-      const link = location.origin + '/?ref=' + account.refCode;
-      const txt = `🎱 Vem jogar Sinuca Pro comigo! Cadastra pelo meu link: ${link}`;
-      if (navigator.share) navigator.share({ text: txt }).catch(() => {});
-      else if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => displayToast('Link copiado! Mande pros amigos 🤝', 4000)).catch(() => displayToast(link, 6000));
-      else displayToast(link, 8000);
-    });
+    // link de afiliado escondido por ora (só volta quando tiver Pix/dinheiro real);
+    // o back-end de indicação continua pronto pra ser religado.
     bootAuth();
 
     document.querySelectorAll('.menu-btn[data-setup]').forEach(b =>
