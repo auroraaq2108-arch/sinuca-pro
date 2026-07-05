@@ -62,26 +62,29 @@ const Game = (() => {
   }
 
   // ---------- montagem das bolas ----------
-  // pequena variação aleatória: cada break fica único (mesa real nunca é perfeita).
-  // No break, a física é caótica — fração de milímetro muda todo o resultado.
+  // variação aleatória: cada break fica único (mesa real nunca é perfeita).
+  // No break a física é caótica — deslocamentos pequenos mudam todo o resultado,
+  // então nenhuma tacada "decorada" encaçapa sempre a mesma bola.
   function jitter(bs) {
     for (let i = 1; i < bs.length; i++) {          // 0 = bola branca, não mexe
-      bs[i].x += (Math.random() - 0.5) * 0.4;
-      bs[i].y += (Math.random() - 0.5) * 0.4;
+      bs[i].x += (Math.random() - 0.5) * 1.0;
+      bs[i].y += (Math.random() - 0.5) * 1.0;
     }
-    bs[0].y += (Math.random() - 0.5) * 6;          // branca sai de um ponto levemente diferente
+    bs[0].x += (Math.random() - 0.5) * 14;         // branca sai de um ponto diferente
+    bs[0].y += (Math.random() - 0.5) * 14;
     return bs;
   }
 
   function rack(mode) {
     const bs = [mkBall(0, 200, H / 2)];
-    const fx = 600, dx = Math.sqrt(3) * R + 0.6, dy = 2 * R + 0.6;
+    // folga maior entre as bolas: o triângulo espalha diferente a cada saída
+    const fx = 600, dx = Math.sqrt(3) * R + 1.4, dy = 2 * R + 1.4;
     if (mode === 'tresbolas') {
       // jogo raiz de bar: 3 bolas, quem matar 2 primeiro vence
       const ns = shuffle([1, 2, 3]);
       bs.push(mkBall(ns[0], fx, H / 2));
-      bs.push(mkBall(ns[1], fx + dx, H / 2 - (R + 0.3)));
-      bs.push(mkBall(ns[2], fx + dx, H / 2 + (R + 0.3)));
+      bs.push(mkBall(ns[1], fx + dx, H / 2 - (R + 0.9)));
+      bs.push(mkBall(ns[2], fx + dx, H / 2 + (R + 0.9)));
       return jitter(bs);
     }
     if (mode === '8ball') {
@@ -307,8 +310,11 @@ const Game = (() => {
     if (state !== 'aim' || !cue().active) return;
     const c = cue();
     const v = Math.max(60, Math.min(PHYS.MAX_V, speed));
-    c.vx = Math.cos(aimAngle) * v;
-    c.vy = Math.sin(aimAngle) * v;
+    // no break, um tiquinho de aleatoriedade na direção (imperceptível, ~0.4°):
+    // a mesma tacada de saída nunca cai a mesma bola — mata o "decoreba"
+    const ang = breakShot ? aimAngle + (Math.random() - 0.5) * 0.014 : aimAngle;
+    c.vx = Math.cos(ang) * v;
+    c.vy = Math.sin(ang) * v;
     c.spinX = spin.x;
     c.spinY = spin.y;
     strike = { t: 0, x: c.x, y: c.y, angle: aimAngle, pull0: 16 + Math.max(0, (v - 80) / (PHYS.MAX_V - 80)) * 30 };

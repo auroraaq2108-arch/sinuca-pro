@@ -24,7 +24,7 @@ const MIME = {
 
 // versão atual do jogo: cliente com número menor é forçado a recarregar
 // (IMPORTANTE: ao mexer em js/css, bump aqui + ?v= + "versão N" no index.html)
-const APP_VER = 25;
+const APP_VER = 26;
 
 // senha do painel do dono: DEVE vir da variável de ambiente ADMIN_PASS no Render.
 // Sem ela (ou usando a antiga que vazou no repositório), o painel fica DESATIVADO.
