@@ -2,7 +2,7 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
-  const APP_VER = 26; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
+  const APP_VER = 27; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -131,6 +131,7 @@ const UI = (() => {
     account = data.user;
     authToken = data.token;
     localStorage.setItem('sinuca_token', authToken);
+    localStorage.setItem('sinuca_email', account.email); // lembra pra não redigitar
     myNick = account.nick;
     localStorage.setItem('sinuca_nick', myNick);
     coins = account.coins;
@@ -178,13 +179,15 @@ const UI = (() => {
       .catch(() => { $('#auth-submit').disabled = false; authError('sem conexão com o servidor'); });
   }
 
-  function logout() {
+  function logout(keepEmail) {
     localStorage.removeItem('sinuca_token');
     authToken = null;
     account = null;
-    $('#auth-email').value = '';
+    // já tem conta antes? volta pro modo LOGIN com o email preenchido (só falta a senha)
+    const savedEmail = localStorage.getItem('sinuca_email') || '';
+    setAuthMode(savedEmail ? 'login' : 'register');
+    $('#auth-email').value = keepEmail === false ? '' : savedEmail;
     $('#auth-pass').value = '';
-    setAuthMode('login');
     showScreen('screen-auth');
   }
 
@@ -206,12 +209,14 @@ const UI = (() => {
       fetch('/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: authToken }) })
         .then(r => r.json().then(j => ({ ok: r.ok, j })))
         .then(({ ok, j }) => {
-          if (ok && !j.err) applyAccount(j);
-          else { logout(); }
+          if (ok && !j.err) applyAccount(j);        // login automático!
+          else { logout(); authError('Sua sessão expirou — entre de novo.'); }
         })
         .catch(() => { showScreen('screen-menu'); }); // servidor fora do ar: entra offline
     } else {
-      setAuthMode(pendingRef ? 'register' : 'register');
+      const savedEmail = localStorage.getItem('sinuca_email') || '';
+      setAuthMode(savedEmail && !pendingRef ? 'login' : 'register');
+      $('#auth-email').value = savedEmail;
       if (pendingRef) authError('🤝 Você foi convidado! Crie sua conta.', true);
       showScreen('screen-auth');
     }

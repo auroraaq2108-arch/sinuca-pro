@@ -24,7 +24,7 @@ const MIME = {
 
 // versão atual do jogo: cliente com número menor é forçado a recarregar
 // (IMPORTANTE: ao mexer em js/css, bump aqui + ?v= + "versão N" no index.html)
-const APP_VER = 26;
+const APP_VER = 27;
 
 // senha do painel do dono: DEVE vir da variável de ambiente ADMIN_PASS no Render.
 // Sem ela (ou usando a antiga que vazou no repositório), o painel fica DESATIVADO.
@@ -565,4 +565,15 @@ server.listen(PORT, () => {
     console.log('  Para desligar: feche esta janela.');
   }
   console.log('================================================');
+
+  // mantém o servidor acordado no plano grátis (senão dorme após 15 min sem ninguém
+  // e ESQUECE contas/sessões). Faz o servidor visitar a si mesmo a cada 12 min.
+  const SELF = process.env.RENDER_EXTERNAL_URL;
+  if (SELF) {
+    const https = require('https');
+    setInterval(() => {
+      https.get(SELF, r => r.resume()).on('error', () => {});
+    }, 12 * 60 * 1000).unref?.();
+    console.log('  keep-alive ligado (' + SELF + ')');
+  }
 });
