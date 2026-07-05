@@ -42,16 +42,19 @@ create table if not exists users (
    (Deve aparecer "Success. No rows returned".)
 
 
-PASSO 4 — Pegar as 2 chaves (1 min)
+PASSO 4 — Pegar a URL e a chave (1 min)
 ------------------------------------------------
 1. No menu da esquerda, clique na engrenagem "Project Settings".
-2. Clique em "API".
-3. Você vai precisar de DUAS coisas dessa página:
+2. Clique em "API Keys" (chaves) e em "Data API" (pra achar a URL).
+3. Você vai precisar de DUAS coisas:
 
    a) "Project URL"  — algo como  https://abcdefgh.supabase.co
-   b) A chave "service_role"  (na seção "Project API keys")
-      -> clique em "Reveal" e copie. É uma chave BEM comprida.
-      ATENÇÃO: use a "service_role", NÃO a "anon".
+      (fica em Data API / Project URL, no topo)
+
+   b) A "Secret key" (começa com  sb_secret_... )
+      -> na seção "Secret keys", clique no olhinho pra revelar e copie.
+      ATENÇÃO: use a "Secret key" (sb_secret_), NUNCA a "Publishable"
+      (sb_publishable_) — a publishable não consegue gravar.
 
 
 PASSO 5 — Colar no Render (2 min)

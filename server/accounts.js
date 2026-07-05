@@ -15,7 +15,8 @@ const TOKEN_TTL = 30 * 24 * 3600 * 1000; // sessão vale 30 dias
 const DIR = path.join(__dirname, 'data');
 const FILE = path.join(DIR, 'accounts.json');
 
-const SUPA_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+// aceita a URL base OU com /rest/v1 no fim (tira o que sobra pra não duplicar)
+const SUPA_URL = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
 const SUPA_KEY = process.env.SUPABASE_KEY || '';
 const USE_SUPA = !!(SUPA_URL && SUPA_KEY);
 
@@ -33,11 +34,15 @@ function supaReq(method, pathq, body) {
     const u = new URL(SUPA_URL + '/rest/v1/' + pathq);
     const mod = u.protocol === 'http:' ? require('http') : https;
     const data = body ? JSON.stringify(body) : null;
+    // chave nova (sb_secret_...) autentica pelo header apikey; chave antiga (JWT eyJ...)
+    // também precisa do Authorization Bearer. Cobre os dois formatos.
+    const isJwt = SUPA_KEY.startsWith('eyJ');
     const req = mod.request({
       method, hostname: u.hostname, path: u.pathname + u.search,
       port: u.port || (u.protocol === 'http:' ? 80 : 443),
       headers: {
-        apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+        apikey: SUPA_KEY,
+        ...(isJwt ? { Authorization: 'Bearer ' + SUPA_KEY } : {}),
         'Content-Type': 'application/json',
         ...(method === 'POST' ? { Prefer: 'resolution=merge-duplicates,return=minimal' } : {}),
         ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
