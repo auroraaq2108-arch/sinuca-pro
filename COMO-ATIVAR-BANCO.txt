@@ -1,0 +1,80 @@
+========================================================
+  ATIVAR O BANCO PERMANENTE (SUPABASE) — 5 a 10 minutos
+========================================================
+
+Depois disso, as contas NUNCA MAIS somem (nem quando eu publico
+atualização, nem quando o servidor reinicia). É de graça.
+
+O código já está TODO pronto. Você só precisa criar o banco e colar
+2 chaves no Render. Siga na ordem:
+
+
+PASSO 1 — Criar conta no Supabase (2 min)
+------------------------------------------------
+1. Entre em: supabase.com
+2. Clique em "Start your project" / "Sign in with GitHub"
+   (pode usar sua conta do GitHub — mais rápido)
+3. Autorize.
+
+
+PASSO 2 — Criar o projeto (2 min)
+------------------------------------------------
+1. Clique em "New project".
+2. Name: sinuca   (qualquer nome)
+3. Database Password: crie uma senha forte e GUARDE
+   (não precisa me mandar — é interna do banco)
+4. Region: escolha "South America (São Paulo)" se aparecer.
+5. Clique em "Create new project" e espere ~1 minuto
+   (ele monta o banco).
+
+
+PASSO 3 — Criar a tabela (1 min) — COPIAR E COLAR
+------------------------------------------------
+1. No menu da esquerda, clique em "SQL Editor".
+2. Clique em "New query".
+3. Cole EXATAMENTE isto e clique em "Run":
+
+create table if not exists users (
+  id text primary key,
+  data jsonb not null
+);
+
+   (Deve aparecer "Success. No rows returned".)
+
+
+PASSO 4 — Pegar as 2 chaves (1 min)
+------------------------------------------------
+1. No menu da esquerda, clique na engrenagem "Project Settings".
+2. Clique em "API".
+3. Você vai precisar de DUAS coisas dessa página:
+
+   a) "Project URL"  — algo como  https://abcdefgh.supabase.co
+   b) A chave "service_role"  (na seção "Project API keys")
+      -> clique em "Reveal" e copie. É uma chave BEM comprida.
+      ATENÇÃO: use a "service_role", NÃO a "anon".
+
+
+PASSO 5 — Colar no Render (2 min)
+------------------------------------------------
+1. Entre em render.com -> seu serviço "sinuca-pro".
+2. Menu da esquerda: "Environment".
+3. Clique "Add Environment Variable" e adicione DUAS:
+
+   Key: SUPABASE_URL
+   Value: (cole o "Project URL" do passo 4a)
+
+   Key: SUPABASE_KEY
+   Value: (cole a chave "service_role" do passo 4b)
+
+4. Clique "Save Changes". O servidor reinicia sozinho (~1 min).
+
+
+PRONTO! Como saber se funcionou:
+------------------------------------------------
+- Crie uma conta no jogo.
+- Me avise que ativou. Eu confiro nos logs do Render se apareceu
+  "Supabase conectado — X contas carregadas (PERMANENTE)".
+- A partir daí, nada mais some.
+
+Se algo der errado, me manda print da tela onde travou.
+Nunca precisa mexer em código — é tudo configuração.

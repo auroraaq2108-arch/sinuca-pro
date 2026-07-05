@@ -1,8 +1,10 @@
 // accounts.js — contas de jogador (email/senha), carteira e ranking no servidor.
 // Sem dependências externas: senha via scrypt (embutido no Node).
-// Guarda em data/accounts.json (ATENÇÃO: na nuvem grátis o disco é efêmero — some
-// quando o servidor reinicia; trocar por banco de verdade antes do dinheiro real).
+// Armazenamento:
+//   - se SUPABASE_URL + SUPABASE_KEY estiverem no ambiente → banco Supabase (PERMANENTE)
+//   - senão → arquivo data/accounts.json (efêmero na nuvem grátis; some no restart)
 const crypto = require('crypto');
+const https = require('https');
 const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
@@ -13,29 +15,98 @@ const TOKEN_TTL = 30 * 24 * 3600 * 1000; // sessão vale 30 dias
 const DIR = path.join(__dirname, 'data');
 const FILE = path.join(DIR, 'accounts.json');
 
+const SUPA_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+const SUPA_KEY = process.env.SUPABASE_KEY || '';
+const USE_SUPA = !!(SUPA_URL && SUPA_KEY);
+
 let db = { users: {}, byEmail: {}, byRef: {} };
-try {
-  const loaded = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-  db = { users: loaded.users || {}, byEmail: loaded.byEmail || {}, byRef: loaded.byRef || {} };
-} catch (e) { /* primeiro uso */ }
 
-const sessions = new Map(); // token -> { id, exp } (em memória; cai no restart, tudo bem)
-
-// limpa sessões vencidas de tempos em tempos
+const sessions = new Map(); // token -> { id, exp } (em memória; cai no restart)
 setInterval(() => {
   const now = Date.now();
   for (const [t, s] of sessions) if (s.exp < now) sessions.delete(t);
 }, 3600 * 1000).unref?.();
 
-let saveTimer = null;
-function save() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
+// ---- Supabase via API REST (sem instalar nada) ----
+function supaReq(method, pathq, body) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(SUPA_URL + '/rest/v1/' + pathq);
+    const mod = u.protocol === 'http:' ? require('http') : https;
+    const data = body ? JSON.stringify(body) : null;
+    const req = mod.request({
+      method, hostname: u.hostname, path: u.pathname + u.search,
+      port: u.port || (u.protocol === 'http:' ? 80 : 443),
+      headers: {
+        apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        ...(method === 'POST' ? { Prefer: 'resolution=merge-duplicates,return=minimal' } : {}),
+        ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
+      },
+    }, res => {
+      let d = '';
+      res.on('data', c => (d += c));
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) { try { resolve(d ? JSON.parse(d) : null); } catch (e) { resolve(null); } }
+        else reject(new Error('supabase ' + res.statusCode + ': ' + d.slice(0, 200)));
+      });
+    });
+    req.on('error', reject);
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+function indexUser(u) { db.users[u.id] = u; db.byEmail[u.email] = u.id; db.byRef[u.refCode] = u.id; }
+
+// carrega tudo pra memória no início (o servidor espera o `ready` antes de aceitar jogadores)
+const ready = (async () => {
+  if (USE_SUPA) {
     try {
-      fs.mkdirSync(DIR, { recursive: true });
-      fs.writeFileSync(FILE, JSON.stringify(db));
-    } catch (e) { console.log('não consegui salvar contas:', e.message); }
-  }, 300);
+      const rows = await supaReq('GET', 'users?select=data');
+      for (const row of rows || []) if (row.data && row.data.id) indexUser(row.data);
+      console.log('Supabase conectado — ' + Object.keys(db.users).length + ' contas carregadas (PERMANENTE).');
+    } catch (e) {
+      console.log('ERRO ao conectar no Supabase (' + e.message + '). Confira SUPABASE_URL/SUPABASE_KEY.');
+    }
+  } else {
+    try {
+      const loaded = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+      db = { users: loaded.users || {}, byEmail: loaded.byEmail || {}, byRef: loaded.byRef || {} };
+    } catch (e) { /* primeiro uso */ }
+    console.log('Armazenamento em ARQUIVO (efêmero na nuvem grátis). Configure SUPABASE_URL/SUPABASE_KEY pra permanente.');
+  }
+})();
+
+// grava a mudança de um usuário (Supabase: upsert por usuário · arquivo: salva o conjunto)
+const dirty = new Set();
+let flushTimer = null, fileTimer = null;
+function touch(u) {
+  if (USE_SUPA) {
+    dirty.add(u.id);
+    clearTimeout(flushTimer);
+    flushTimer = setTimeout(flush, 400);
+  } else {
+    clearTimeout(fileTimer);
+    fileTimer = setTimeout(() => {
+      try { fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(db)); }
+      catch (e) { console.log('não consegui salvar contas:', e.message); }
+    }, 300);
+  }
+}
+async function flush() {
+  const ids = [...dirty]; dirty.clear();
+  for (const id of ids) {
+    const u = db.users[id];
+    if (!u) continue;
+    try { await supaReq('POST', 'users', { id, data: u }); }
+    catch (e) { console.log('Supabase save falhou (' + e.message + '), tento de novo'); dirty.add(id); }
+  }
+  if (dirty.size) { clearTimeout(flushTimer); flushTimer = setTimeout(flush, 3000); }
+}
+// grava JÁ e espera (usado no cadastro, pra conta nova nunca se perder)
+async function persistNow(u) {
+  if (USE_SUPA) { try { await supaReq('POST', 'users', { id: u.id, data: u }); } catch (e) { touch(u); } }
+  else touch(u);
 }
 
 // hash de senha assíncrono (não trava o servidor) — scrypt do próprio Node
@@ -97,9 +168,9 @@ async function register({ email, password, nick, ref }) {
   // bônus de indicação: quem trouxe ganha moedas de teste + contador
   if (refBy) {
     const host = db.users[db.byRef[refBy]];
-    if (host) { host.refCount = (host.refCount || 0) + 1; host.refEarn = (host.refEarn || 0) + 100; host.coins += 100; }
+    if (host) { host.refCount = (host.refCount || 0) + 1; host.refEarn = (host.refEarn || 0) + 100; host.coins += 100; touch(host); }
   }
-  save();
+  await persistNow(user); // conta nova é gravada JÁ (não pode se perder)
   return { token: newToken(id), user: pub(user) };
 }
 
@@ -114,7 +185,7 @@ async function login({ email, password }) {
   if (!user || !safeEq(h, user.pass)) return { err: 'Email ou senha incorretos' };
   user.logins = (user.logins || 0) + 1;
   user.lastLogin = Date.now();
-  save();
+  touch(user);
   return { token: newToken(id), user: pub(user) };
 }
 
@@ -137,7 +208,7 @@ function setCoins(id, coins) {
   const u = db.users[id];
   if (!u) return;
   u.coins = Math.max(0, Math.round(coins));
-  save();
+  touch(u);
 }
 
 // resultado de partida valendo ranking (Elo K=32, começa em 1000)
@@ -148,7 +219,7 @@ function recordResult(winnerId, loserId) {
   const d = Math.max(4, Math.round(32 * (1 - expected)));
   w.pts += d; l.pts = Math.max(0, l.pts - d);
   w.w = (w.w || 0) + 1; l.l = (l.l || 0) + 1;
-  save();
+  touch(w); touch(l);
   return d;
 }
 
@@ -156,7 +227,7 @@ function addPlayTime(id, seconds) {
   const u = db.users[id];
   if (!u) return;
   u.hours = (u.hours || 0) + seconds / 3600;
-  save();
+  touch(u);
 }
 
 function top(n = 20) {
@@ -185,6 +256,6 @@ function adminStats() {
 }
 
 module.exports = {
-  register, login, resume, byId, userByToken, pub,
+  ready, register, login, resume, byId, userByToken, pub,
   setCoins, recordResult, addPlayTime, top, adminStats,
 };

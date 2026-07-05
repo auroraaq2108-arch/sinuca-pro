@@ -543,7 +543,7 @@ server.on('upgrade', (req, socket) => {
   };
 });
 
-server.listen(PORT, () => {
+accounts.ready.then(() => server.listen(PORT, () => {
   console.log('================================================');
   console.log('  SINUCA PRO — servidor ligado!');
   console.log('');
@@ -576,4 +576,4 @@ server.listen(PORT, () => {
     }, 12 * 60 * 1000).unref?.();
     console.log('  keep-alive ligado (' + SELF + ')');
   }
-});
+}));
