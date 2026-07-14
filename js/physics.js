@@ -1,12 +1,28 @@
 // physics.js — motor de física da sinuca (bolas, tabelas, caçapas, efeito)
+//
+// Modelo de bola: cada bola guarda velocidade linear (vx,vy) e velocidade
+// angular (wx,wy,wz). wx/wy é o eixo de rotação "deitado" na mesa (o que dá
+// o efeito de seguir/puxar — topspin/backspin); wz é a rotação em torno do
+// eixo vertical (o efeito lateral / faca). Isso é física real de bilhar
+// simplificada (esfera rígida, sem massa — ela se cancela nas equações):
+//   ponto de contato com o pano desliza com velocidade u = (vx - R·wy, vy + R·wx)
+//   enquanto |u| > 0 a bola "desliza" (atrito forte, muda direção e trava a
+//   'seguida'/'puxada'); quando |u| ≈ 0 ela "rola" (atrito fraco, só perde
+//   velocidade aos poucos, sem mais deslizar) — é isso que faz uma tacada
+//   puxada (backspin) frear, "sentar" e voltar, e uma seguida (topspin)
+//   acelerar/curvar depois do impacto, exatamente como na mesa de verdade.
 const PHYS = (() => {
   const W = 800, H = 400;   // área de jogo (feltro), em unidades do mundo
   const R = 10;             // raio da bola
-  const FRICTION = 170;     // desaceleração do rolamento (unid/s²)
-  const STOP_V = 7;         // abaixo disso a bola para
+  const SLIDE_DECEL = 420;  // atrito de deslize (bola "patinando", com efeito ainda ativo)
+  const ROLL_DECEL = 170;   // atrito de rolamento (bola já rolando "limpa")
+  const SLIP_EPS = 6;       // abaixo disso o deslize é tratado como zero (rolamento puro)
+  const STOP_V = 7;         // abaixo disso a bola para de vez
   const E_BALL = 0.95;      // restituição bola-bola
   const E_CUSH = 0.78;      // restituição na tabela
   const MAX_V = 1500;       // velocidade máxima da tacada
+  const CUSH_GRIP = 0.16;   // quanto o efeito lateral desvia a bola ao bater na tabela
+  const CUSH_SPIN_DECAY = 0.45; // quanto do efeito lateral "gruda" na tabela (o resto se perde)
 
   const POCKETS = [
     { x: 2,     y: 2,     r: 17 },
@@ -38,6 +54,7 @@ const PHYS = (() => {
   function pot(b, ev, pocket) {
     b.active = false;
     b.vx = b.vy = 0;
+    b.wx = b.wy = b.wz = 0;
     if (ev) {
       if (b.n === 0) ev.cuePotted = true;
       else ev.potted.push(b.n);
@@ -46,29 +63,67 @@ const PHYS = (() => {
     if (api.onImpact) api.onImpact(1, 'pot');
   }
 
-  // efeito lateral: desvia a bola ao quicar na tabela
+  // efeito lateral: desvia a bola ao quicar na tabela (a tabela "agarra" um
+  // pouco do giro em torno do eixo vertical e devolve como desvio lateral)
   function sideSpinBounce(b, axis, sign) {
-    if (!b.spinX) return;
-    if (axis === 'x') b.vy += sign * b.spinX * Math.abs(b.vx) * 0.6;
-    else b.vx += sign * b.spinX * Math.abs(b.vy) * 0.6;
-    b.spinX *= 0.45;
+    if (!b.wz) return;
+    const kick = sign * b.wz * R * CUSH_GRIP;
+    if (axis === 'x') b.vy += kick; else b.vx += kick;
+    b.wz *= CUSH_SPIN_DECAY;
+    if (Math.abs(b.wz) < 0.02) b.wz = 0;
   }
 
-  function sub(balls, h, ev) {
-    // integração + atrito
+  // atrito + giro: um substep de integração do rolamento/deslize de cada bola
+  function integrateSpin(balls, h) {
     for (const b of balls) {
       if (!b.active) continue;
-      const v = Math.hypot(b.vx, b.vy);
-      if (v > 0) {
-        const nv = Math.max(0, v - FRICTION * h);
-        const k = v > 0 ? nv / v : 0;
-        b.vx *= k; b.vy *= k;
-        if (nv < STOP_V) { b.vx = 0; b.vy = 0; }
+      const ux = b.vx - R * b.wy, uy = b.vy + R * b.wx;
+      const uMag = Math.hypot(ux, uy);
+      if (uMag > SLIP_EPS) {
+        // deslizando: atrito forte muda velocidade E giro ao mesmo tempo,
+        // caminhando pro rolamento puro (é o que dá a "puxada"/"seguida")
+        const ix = ux / uMag, iy = uy / uMag;
+        const dv = SLIDE_DECEL * h;
+        const dw = (5 * SLIDE_DECEL * h) / (2 * R);
+        const nvx = b.vx - dv * ix, nvy = b.vy - dv * iy;
+        const nwx = b.wx - dw * iy, nwy = b.wy + dw * ix;
+        const nux = nvx - R * nwy, nuy = nvy + R * nwx;
+        if (ux * nux + uy * nuy <= 0) { b.wy = b.vx / R; b.wx = -b.vy / R; } // cruzou o zero: trava no rolamento
+        else { b.vx = nvx; b.vy = nvy; b.wx = nwx; b.wy = nwy; }
+      } else {
+        // rolando limpo: atrito fraco, só perde velocidade aos poucos
+        const v = Math.hypot(b.vx, b.vy);
+        if (v > 0) {
+          const nv = Math.max(0, v - ROLL_DECEL * h);
+          const k = nv / v;
+          b.vx *= k; b.vy *= k;
+          if (nv < STOP_V) { b.vx = 0; b.vy = 0; b.wx = 0; b.wy = 0; b.wz = 0; }
+          else { b.wy = b.vx / R; b.wx = -b.vy / R; }
+        } else {
+          b.wx = 0; b.wy = 0;
+        }
       }
-      b.x += b.vx * h;
-      b.y += b.vy * h;
     }
-    // colisões bola-bola (massas iguais)
+  }
+
+  // colisão bola-bola já em contato exato (usado pela CCD e por overlaps residuais)
+  function resolveBallHit(a, c, ev) {
+    const dx = c.x - a.x, dy = c.y - a.y;
+    const d = Math.hypot(dx, dy) || 2 * R;
+    const nx = dx / d, ny = dy / d;
+    const rel = (a.vx - c.vx) * nx + (a.vy - c.vy) * ny;
+    if (rel <= 0) return;
+    const jm = rel * (1 + E_BALL) / 2;
+    a.vx -= jm * nx; a.vy -= jm * ny;
+    c.vx += jm * nx; c.vy += jm * ny;
+    const cueBall = a.n === 0 ? a : c.n === 0 ? c : null;
+    if (cueBall && ev && ev.firstHit == null) ev.firstHit = (cueBall === a ? c : a).n;
+    if (api.onImpact) api.onImpact(rel, 'ball');
+  }
+
+  // separa bolas que já começam o substep sobrepostas (raro: jitter da mesa
+  // recém-armada ou resíduo numérico) antes de rodar a detecção contínua
+  function resolveOverlaps(balls, ev) {
     for (let i = 0; i < balls.length; i++) {
       const a = balls[i];
       if (!a.active) continue;
@@ -82,26 +137,49 @@ const PHYS = (() => {
         const overlap = 2 * R - d;
         a.x -= nx * overlap / 2; a.y -= ny * overlap / 2;
         c.x += nx * overlap / 2; c.y += ny * overlap / 2;
-        const rel = (a.vx - c.vx) * nx + (a.vy - c.vy) * ny;
-        if (rel <= 0) continue;
-        const jm = rel * (1 + E_BALL) / 2;
-        a.vx -= jm * nx; a.vy -= jm * ny;
-        c.vx += jm * nx; c.vy += jm * ny;
-        // primeiro contato da branca: registra e aplica o efeito (seguir/puxar)
-        const cueBall = a.n === 0 ? a : c.n === 0 ? c : null;
-        if (cueBall && ev && ev.firstHit == null) {
-          ev.firstHit = (cueBall === a ? c : a).n;
-          const s = cueBall.spinY || 0;
-          if (s) {
-            const dir = cueBall === a ? 1 : -1; // normal aponta de a para c
-            cueBall.vx += nx * dir * s * rel * 0.38;
-            cueBall.vy += ny * dir * s * rel * 0.38;
-            cueBall.spinY = 0;
-          }
-        }
-        if (api.onImpact) api.onImpact(rel, 'ball');
+        resolveBallHit(a, c, ev);
       }
     }
+  }
+
+  // move todas as bolas pelo substep, mas com detecção CONTÍNUA de colisão
+  // bola-bola: acha o instante exato em que duas bolas se tocam (não só o
+  // estado no fim do passo) — sem isso, tacadas fortes (ex: o break) podem
+  // fazer duas bolas rápidas se atravessarem sem colidir.
+  function moveWithCCD(balls, h, ev) {
+    let remaining = h, guard = 0;
+    while (remaining > 1e-9 && guard++ < 12) {
+      let bestT = remaining, bestA = null, bestC = null;
+      for (let i = 0; i < balls.length; i++) {
+        const a = balls[i];
+        if (!a.active) continue;
+        for (let j = i + 1; j < balls.length; j++) {
+          const c = balls[j];
+          if (!c.active) continue;
+          const px = c.x - a.x, py = c.y - a.y;
+          const vx = c.vx - a.vx, vy = c.vy - a.vy;
+          const vv = vx * vx + vy * vy;
+          if (vv < 1e-6) continue;
+          const pv = px * vx + py * vy;
+          if (pv >= 0) continue; // se afastando, não colide nesse trecho
+          const pp = px * px + py * py, rr = 4 * R * R;
+          const disc = pv * pv - vv * (pp - rr);
+          if (disc < 0) continue;
+          const t = (-pv - Math.sqrt(disc)) / vv;
+          if (t >= 0 && t < bestT) { bestT = t; bestA = a; bestC = c; }
+        }
+      }
+      for (const b of balls) { if (b.active) { b.x += b.vx * bestT; b.y += b.vy * bestT; } }
+      remaining -= bestT;
+      if (bestA && bestC) resolveBallHit(bestA, bestC, ev);
+      else break;
+    }
+  }
+
+  function sub(balls, h, ev) {
+    integrateSpin(balls, h);       // atrito + giro (rolar/deslizar) — não mexe em posição
+    resolveOverlaps(balls, ev);    // desgruda bolas que já nasceram encostadas
+    moveWithCCD(balls, h, ev);     // move + colisão bola-bola sem atravessar
     // caçapas e tabelas
     for (const b of balls) {
       if (!b.active) continue;
@@ -131,7 +209,7 @@ const PHYS = (() => {
   }
 
   function anyMoving(balls) {
-    return balls.some(b => b.active && (b.vx !== 0 || b.vy !== 0));
+    return balls.some(b => b.active && (b.vx !== 0 || b.vy !== 0 || b.wx !== 0 || b.wy !== 0));
   }
 
   // traça um raio a partir da bola branca: primeira bola ou tabela atingida
@@ -184,6 +262,18 @@ const PHYS = (() => {
     return true;
   }
 
-  Object.assign(api, { W, H, R, MAX_V, POCKETS, step, anyMoving, cast, pathClear, validSpot, onImpact: null, onPot: null });
+  // velocidade angular inicial a partir do ponto de tacada (efeito/spin,
+  // cada eixo de -1 a 1) e da velocidade de saída da tacada — física real
+  // de "onde o taco bate na bola" (deslocado do centro cria giro).
+  function spinToOmega(spinX, spinY, v0, angle) {
+    const OFFSET_FRAC = 0.5; // deslocamento máx. do taco = metade do raio
+    const CSPIN = OFFSET_FRAC * 2.5;
+    const dx = Math.cos(angle), dy = Math.sin(angle);
+    const wFollow = spinY * CSPIN * v0 / R; // eixo perpendicular à tacada (segue/puxa)
+    const wSide = spinX * CSPIN * v0 / R;   // eixo vertical (efeito lateral)
+    return { wx: -wFollow * dy, wy: wFollow * dx, wz: wSide };
+  }
+
+  Object.assign(api, { W, H, R, MAX_V, POCKETS, step, anyMoving, cast, pathClear, validSpot, spinToOmega, onImpact: null, onPot: null });
   return api;
 })();

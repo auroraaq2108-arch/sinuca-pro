@@ -8,6 +8,7 @@ const https = require('https');
 const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
+const { atomicWriteFileSync } = require('./fsutil');
 
 const scrypt = promisify(crypto.scrypt);
 const TOKEN_TTL = 30 * 24 * 3600 * 1000; // sessão vale 30 dias
@@ -93,7 +94,7 @@ function touch(u) {
   } else {
     clearTimeout(fileTimer);
     fileTimer = setTimeout(() => {
-      try { fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(FILE, JSON.stringify(db)); }
+      try { fs.mkdirSync(DIR, { recursive: true }); atomicWriteFileSync(FILE, JSON.stringify(db)); }
       catch (e) { console.log('não consegui salvar contas:', e.message); }
     }, 300);
   }

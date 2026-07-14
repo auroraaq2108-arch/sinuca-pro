@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const net = require('net');
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+const MAX_FRAME = 262144; // 256KB por frame — o jogo não manda nada perto disso
 
 function acceptKey(key) {
   return crypto.createHash('sha1').update(key + GUID).digest('base64');
@@ -14,8 +15,13 @@ function wrap(socket) {
   const conn = { socket, onmessage: null, onclose: null, alive: true };
   let buf = Buffer.alloc(0);
   let frags = [];
+  let fragsLen = 0;
 
   socket.on('data', chunk => {
+    // teto duro: mesmo antes de decidir se o frame é válido, não deixa o
+    // buffer pendente crescer sem limite (um único frame nunca precisa
+    // disso — o jogo só troca mensagens JSON pequenas).
+    if (buf.length + chunk.length > MAX_FRAME * 2) { close(); return; }
     buf = Buffer.concat([buf, chunk]);
     while (true) {
       if (buf.length < 2) return;
@@ -33,6 +39,9 @@ function wrap(socket) {
         len = Number(buf.readBigUInt64BE(2));
         off = 10;
       }
+      // frame maior que o teto: encerra a conexão já (não espera acumular
+      // o corpo inteiro em memória pra só então rejeitar).
+      if (len > MAX_FRAME) { close(); return; }
       const maskOff = off;
       if (masked) off += 4;
       if (buf.length < off + len) return;
@@ -46,10 +55,13 @@ function wrap(socket) {
       if (op === 8) { close(); return; }
       if (op === 9) { send(payload, 10); continue; } // ping → pong
       if (op === 10) continue;                        // pong
+      fragsLen += payload.length;
+      if (fragsLen > MAX_FRAME) { close(); return; } // mensagem fragmentada crescendo demais
       frags.push(payload);
       if (fin) {
         const msg = Buffer.concat(frags).toString('utf8');
         frags = [];
+        fragsLen = 0;
         if (conn.onmessage) conn.onmessage(msg);
       }
     }

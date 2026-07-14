@@ -2,7 +2,7 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
-  const APP_VER = 27; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
+  const APP_VER = 28; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -391,8 +391,9 @@ const UI = (() => {
       if (youWon) stats.w++; else stats.l++;
       saveStats();
     }
-    // ranking: o anfitrião reporta o resultado da partida online
-    if (vsRemote && online.active && online.seat === 0) {
+    // ranking/moedas: os DOIS lados reportam o resultado (o servidor só credita
+    // quando batem — evita que um jogador se autodeclare vencedor sozinho).
+    if (vsRemote && online.active) {
       NET.send({ t: 'result', w: winner });
     }
     if (vsRemote) online.settled = true; // aposta paga: fuga depois daqui não dá pote
@@ -564,7 +565,7 @@ const UI = (() => {
       const digitado = el && el.value.trim() ? el.value.trim() : myNick;
       myNick = (digitado || 'Jogador').slice(0, 14);
       localStorage.setItem('sinuca_nick', myNick);
-      NET.send({ t: 'hello', id: myId, name: myNick, v: APP_VER });
+      NET.send({ t: 'hello', id: myId, name: myNick, v: APP_VER, token: authToken });
       netDebug('conectado');
       cb(true);
     });
@@ -910,6 +911,10 @@ const UI = (() => {
       if (m.delta != null) {
         displayToast(`🏆 Ranking: ${m.delta > 0 ? '+' : ''}${m.delta} pontos (total: ${m.pts})`, 5000);
       }
+      // saldo oficial da conta (calculado pelo servidor) sobrepõe o palpite local:
+      // fecha a diferença se a aposta não bateu (disputa) ou se o valor otimista
+      // mostrado na hora de "matchEnded" ficou desatualizado.
+      if (typeof m.coins === 'number') setCoins(m.coins);
     });
     NET.on('top', m => renderTop(m));
 
@@ -977,7 +982,7 @@ const UI = (() => {
       }
       NET.connect(ok => {
         if (!ok) { setTimeout(tryReconnect, 3000); return; }
-        NET.send({ t: 'hello', id: myId, name: myNick }); // dispara a retomada no servidor
+        NET.send({ t: 'hello', id: myId, name: myNick, v: APP_VER, token: authToken }); // dispara a retomada no servidor
         if (queueing && lastQueue) NET.send({ t: 'queue', ...lastQueue }); // volta pra fila
       });
     }

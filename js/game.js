@@ -36,7 +36,7 @@ const Game = (() => {
   // ---------- utilidades ----------
   const cue = () => balls[0];
   const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  const mkBall = (n, x, y) => ({ n, x, y, vx: 0, vy: 0, active: true, spinX: 0, spinY: 0 });
+  const mkBall = (n, x, y) => ({ n, x, y, vx: 0, vy: 0, active: true, wx: 0, wy: 0, wz: 0 });
   const lowest = () => { let m = null; for (const b of balls) if (b.active && b.n > 0 && (m === null || b.n < m)) m = b.n; return m; };
   const remaining = g => balls.filter(b => b.active && b.n > 0 && groupOf(b.n) === g).length;
   const humanTurn = () => !!match && match.players[current].type === 'human';
@@ -315,8 +315,8 @@ const Game = (() => {
     const ang = breakShot ? aimAngle + (Math.random() - 0.5) * 0.014 : aimAngle;
     c.vx = Math.cos(ang) * v;
     c.vy = Math.sin(ang) * v;
-    c.spinX = spin.x;
-    c.spinY = spin.y;
+    const om = PHYS.spinToOmega(spin.x, spin.y, v, ang);
+    c.wx = om.wx; c.wy = om.wy; c.wz = om.wz;
     strike = { t: 0, x: c.x, y: c.y, angle: aimAngle, pull0: 16 + Math.max(0, (v - 80) / (PHYS.MAX_V - 80)) * 30 };
     trail = [];
     if (match.online && match.players[current].type === 'human') {

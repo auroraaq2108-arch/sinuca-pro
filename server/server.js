@@ -7,6 +7,7 @@ const path = require('path');
 const os = require('os');
 const { acceptKey, wrap } = require('./ws-mini');
 const accounts = require('./accounts');
+const { atomicWriteFileSync } = require('./fsutil');
 
 const PORT = process.env.PORT || 8080;
 const ROOT = path.join(__dirname, '..'); // pasta sinuca/
@@ -24,7 +25,7 @@ const MIME = {
 
 // versão atual do jogo: cliente com número menor é forçado a recarregar
 // (IMPORTANTE: ao mexer em js/css, bump aqui + ?v= + "versão N" no index.html)
-const APP_VER = 27;
+const APP_VER = 28;
 
 // senha do painel do dono: DEVE vir da variável de ambiente ADMIN_PASS no Render.
 // Sem ela (ou usando a antiga que vazou no repositório), o painel fica DESATIVADO.
@@ -50,8 +51,13 @@ setInterval(() => {
   }
 }, 600000).unref?.();
 function clientIp(req) {
-  const xff = req.headers['x-forwarded-for']; // o Render põe o IP real aqui
-  return (xff ? String(xff).split(',')[0].trim() : req.socket.remoteAddress) || 'unknown';
+  // x-forwarded-for pode vir com uma cadeia "cliente, proxy1, proxy2..." — o cliente
+  // pode inventar qualquer coisa no início da lista. O único valor confiável é o
+  // ÚLTIMO, que é o que o proxy da Render (o único hop entre o cliente e nós) escreve
+  // por cima da requisição real. Usar o primeiro valor permite burlar o rate limit.
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) { const parts = String(xff).split(','); return parts[parts.length - 1].trim() || 'unknown'; }
+  return req.socket.remoteAddress || 'unknown';
 }
 
 // cabeçalhos de segurança em toda resposta
@@ -212,7 +218,7 @@ try { reports = JSON.parse(fs.readFileSync(REPORTS_FILE, 'utf8')); } catch (e) {
 function saveReports() {
   try {
     fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
-    fs.writeFileSync(REPORTS_FILE, JSON.stringify(reports));
+    atomicWriteFileSync(REPORTS_FILE, JSON.stringify(reports));
   } catch (e) { console.log('não consegui salvar reportes:', e.message); }
 }
 
@@ -229,7 +235,7 @@ function saveDB() {
   saveTimer = setTimeout(() => {
     try {
       fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(DB_FILE, JSON.stringify(DB));
+      atomicWriteFileSync(DB_FILE, JSON.stringify(DB));
     } catch (e) { console.log('não consegui salvar o ranking:', e.message); }
   }, 300);
 }
@@ -249,6 +255,52 @@ function elo(winner, loser) {
   winner.w++;
   loser.l++;
   return d;
+}
+
+// aplica o resultado já confirmado pelos dois lados (ou aceito por timeout).
+// Com aposta: crédito de moedas é feito AQUI, pelo servidor, a partir da conta
+// autenticada — o cliente não manda mais o próprio saldo depois de ganhar.
+function finalizeResult(room, w) {
+  room.reported = true;
+  const c0 = room.seats[0], c1 = room.seats[1];
+  const winnerConn = room.seats[w], loserConn = room.seats[1 - w];
+  const winnerId = winnerConn.playerId, loserId = loserConn.playerId;
+  const winnerName = winnerConn.playerName, loserName = loserConn.playerName;
+
+  if (room.stake > 0) {
+    // apostado: só chega aqui com os dois autenticados (garantido no queue/create/join).
+    const winnerAcc = accounts.byId(winnerId), loserAcc = accounts.byId(loserId);
+    if (!winnerAcc || !loserAcc) return; // conta sumiu no meio do caminho: não credita
+    const d = accounts.recordResult(winnerId, loserId) || 0;
+    const prize = room.stake + Math.round(room.stake * 0.9); // taxa de 10% só sobre o ganho
+    accounts.setCoins(winnerId, winnerAcc.coins + prize);
+    const wA = accounts.byId(winnerId), lA = accounts.byId(loserId);
+    if (winnerConn.alive) winnerConn.send(JSON.stringify({ t: 'pts', pts: wA.pts, w: wA.w, l: wA.l, delta: d, coins: wA.coins }));
+    if (loserConn.alive) loserConn.send(JSON.stringify({ t: 'pts', pts: lA.pts, w: lA.w, l: lA.l, delta: -d }));
+    // letreiro de vitórias: prova social pra quem está no menu
+    const item = { w: winnerName, l: loserName, v: prize };
+    feed.push(item);
+    if (feed.length > 20) feed.shift();
+    const packed = JSON.stringify({ t: 'feed', item });
+    for (const c of allConns) if (c.alive) c.send(packed);
+  } else {
+    // amistoso (sem moeda): ranking simples por id, sem precisar de conta.
+    const recW = playerRec(winnerId), recL = playerRec(loserId);
+    const d = elo(recW, recL);
+    saveDB();
+    if (winnerConn.alive) winnerConn.send(JSON.stringify({ t: 'pts', pts: recW.pts, w: recW.w, l: recW.l, delta: d }));
+    if (loserConn.alive) loserConn.send(JSON.stringify({ t: 'pts', pts: recL.pts, w: recL.w, l: recL.l, delta: -d }));
+  }
+}
+
+// jogar valendo moeda exige conta logada (é o que amarra a aposta/ranking a
+// alguém real — sem isso dá pra criar um id anônimo novo a cada partida).
+function requireAuthForStake(conn, stake) {
+  if (stake > 0 && !conn.authed) {
+    conn.send(JSON.stringify({ t: 'err', m: 'Entre na sua conta (login/cadastro) pra jogar valendo moedas. Amistoso não precisa.' }));
+    return false;
+  }
+  return true;
 }
 
 // ---------- salas e fila ----------
@@ -350,19 +402,31 @@ server.on('upgrade', (req, socket) => {
         conn.send(JSON.stringify({ t: 'reload' }));
         return;
       }
-      const id = String(msg.id || '').slice(0, 40);
-      if (!id) return;
-      conn.playerId = id;
-      conn.playerName = String(msg.name || 'Jogador').slice(0, 14).trim() || 'Jogador';
-      const rec = playerRec(id, conn.playerName);
-      saveDB();
-      conn.send(JSON.stringify({ t: 'pts', pts: rec.pts, w: rec.w, l: rec.l }));
+      // com conta logada (token válido), a identidade vem da CONTA — não do que o
+      // cliente inventar. É o que permite ligar apostas/ranking a alguém real e
+      // impede um jogador assumir/poluir o histórico de outro trocando um id local.
+      const authedUser = typeof msg.token === 'string' ? accounts.userByToken(msg.token) : null;
+      if (authedUser) {
+        conn.playerId = authedUser.id;
+        conn.playerName = (authedUser.nick || 'Jogador').slice(0, 14);
+        conn.authed = true;
+        conn.send(JSON.stringify({ t: 'pts', pts: authedUser.pts, w: authedUser.w, l: authedUser.l, coins: authedUser.coins }));
+      } else {
+        const id = String(msg.id || '').slice(0, 40);
+        if (!id) return;
+        conn.playerId = id;
+        conn.playerName = String(msg.name || 'Jogador').slice(0, 14).trim() || 'Jogador';
+        conn.authed = false;
+        const rec = playerRec(id, conn.playerName);
+        saveDB();
+        conn.send(JSON.stringify({ t: 'pts', pts: rec.pts, w: rec.w, l: rec.l }));
+      }
       if (feed.length) conn.send(JSON.stringify({ t: 'feedlist', list: feed.slice(-6) }));
       // caiu no meio de uma partida? devolve a vaga guardada
-      const pend = pendingResume.get(id);
+      const pend = pendingResume.get(conn.playerId);
       if (pend && !pend.room.seats[pend.seat]) {
         clearTimeout(pend.timer);
-        pendingResume.delete(id);
+        pendingResume.delete(conn.playerId);
         conn.room = pend.room;
         conn.seat = pend.seat;
         conn.code = pend.code;
@@ -418,6 +482,7 @@ server.on('upgrade', (req, socket) => {
       const mode = msg.mode === 'tresbolas' ? 'tresbolas' : '8ball';
       const bestOf = [1, 3, 5, 9, 29].includes(msg.bestOf) ? msg.bestOf : (mode === 'tresbolas' ? 9 : 3);
       const stake = [0, 10, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 10;
+      if (!requireAuthForStake(conn, stake)) return;
       // ignora entradas mortas na fila (conexão caiu) antes de parear
       let other = null;
       while (queue.length) {
@@ -446,30 +511,39 @@ server.on('upgrade', (req, socket) => {
       return;
     }
 
-    // resultado da partida (só o anfitrião reporta, uma vez por partida)
+    // resultado da partida: os DOIS lados reportam quem venceu, e só quando
+    // batem é que pontos/moedas são creditados. Isso fecha a brecha de um
+    // jogador se autodeclarar vencedor sozinho (ex: via console do navegador)
+    // — precisaria também forjar a mensagem do adversário, que não controla.
     if (msg.t === 'result') {
       const room = conn.room;
-      if (!room || conn.seat !== 0 || room.reported) return;
+      if (!room || room.reported) return;
+      if (conn.seat !== 0 && conn.seat !== 1) return;
       const c0 = room.seats[0], c1 = room.seats[1];
       if (!c0 || !c1 || !c0.playerId || !c1.playerId || c0.playerId === c1.playerId) return;
-      room.reported = true;
       const w = msg.w === 1 ? 1 : 0;
-      const recW = playerRec([c0.playerId, c1.playerId][w]);
-      const recL = playerRec([c0.playerId, c1.playerId][1 - w]);
-      const d = elo(recW, recL);
-      saveDB();
-      const winnerConn = room.seats[w], loserConn = room.seats[1 - w];
-      if (winnerConn) winnerConn.send(JSON.stringify({ t: 'pts', pts: recW.pts, w: recW.w, l: recW.l, delta: d }));
-      if (loserConn) loserConn.send(JSON.stringify({ t: 'pts', pts: recL.pts, w: recL.w, l: recL.l, delta: -d }));
-      // letreiro de vitórias: prova social pra quem está no menu
-      if (room.stake > 0 && winnerConn && loserConn) {
-        const prize = room.stake + Math.round(room.stake * 0.9);
-        const item = { w: winnerConn.playerName, l: loserConn.playerName, v: prize };
-        feed.push(item);
-        if (feed.length > 20) feed.shift();
-        const packed = JSON.stringify({ t: 'feed', item });
-        for (const c of allConns) if (c.alive) c.send(packed);
+      room.resultVotes = room.resultVotes || {};
+      room.resultVotes[conn.seat] = w;
+      const votes = room.resultVotes;
+      if (votes[0] === undefined || votes[1] === undefined) {
+        // só um lado reportou até agora: espera até 10s pelo outro (ex: adversário
+        // caiu/fechou a aba depois de perder) — senão aceita sozinho, como antes.
+        clearTimeout(room.resultTimer);
+        room.resultTimer = setTimeout(() => { if (!room.reported) finalizeResult(room, w); }, 10000);
+        return;
       }
+      clearTimeout(room.resultTimer);
+      if (votes[0] !== votes[1]) {
+        // os dois lados discordam de quem venceu: não credita nada, fica pra
+        // investigar depois (indício de trapaça ou de bug de sincronização).
+        room.reported = true;
+        console.log(`[DISPUTA] resultado divergente sala=${conn.code} c0=${votes[0]} c1=${votes[1]}`);
+        const dispute = JSON.stringify({ t: 'err', m: 'O resultado da partida não bateu entre os dois lados — ninguém pontuou ou recebeu moedas dessa vez.' });
+        if (c0.alive) c0.send(dispute);
+        if (c1.alive) c1.send(dispute);
+        return;
+      }
+      finalizeResult(room, votes[0]);
       return;
     }
 
@@ -487,6 +561,7 @@ server.on('upgrade', (req, socket) => {
         return;
       }
       const stake = [0, 10, 25, 100, 250, 500, 1000, 2500].includes(msg.stake) ? msg.stake : 10;
+      if (!requireAuthForStake(conn, stake)) return;
       conn.code = want || makeCode();
       conn.room = { seats: [conn, null], reported: true, stake };
       conn.seat = 0;
@@ -503,6 +578,7 @@ server.on('upgrade', (req, socket) => {
       const r = rooms.get(wanted);
       if (!r || !r.seats[0]) { conn.send(JSON.stringify({ t: 'err', m: 'Sala não encontrada' })); return; }
       if (r.seats[1]) { conn.send(JSON.stringify({ t: 'err', m: 'Sala cheia' })); return; }
+      if (!requireAuthForStake(conn, r.stake || 0)) return;
       conn.room = r;
       conn.seat = 1;
       conn.code = wanted;
@@ -522,7 +598,7 @@ server.on('upgrade', (req, socket) => {
 
     // qualquer outra mensagem é do jogo: repassa para o outro jogador
     if (conn.room) {
-      if (msg.t === 'start') conn.room.reported = false; // nova partida pode pontuar
+      if (msg.t === 'start') { conn.room.reported = false; conn.room.resultVotes = {}; clearTimeout(conn.room.resultTimer); } // nova partida pode pontuar
       const other = conn.room.seats[1 - conn.seat];
       if (other) {
         other.send(raw);
