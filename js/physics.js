@@ -14,7 +14,7 @@
 const PHYS = (() => {
   const W = 800, H = 400;   // área de jogo (feltro), em unidades do mundo
   const R = 10;             // raio da bola
-  const SLIDE_DECEL = 420;  // atrito de deslize (bola "patinando", com efeito ainda ativo)
+  const SLIDE_DECEL = 210;  // atrito de deslize (bola "patinando", com efeito ainda ativo)
   const ROLL_DECEL = 170;   // atrito de rolamento (bola já rolando "limpa")
   const SLIP_EPS = 6;       // abaixo disso o deslize é tratado como zero (rolamento puro)
   const STOP_V = 7;         // abaixo disso a bola para de vez
