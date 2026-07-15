@@ -4,7 +4,7 @@ const UI = (() => {
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
   // troca pelo APP_VER real quando o servidor entrega este arquivo (ver server.js);
   // aberto direto do disco (sem servidor, file://) cai no 28 fixo abaixo.
-  const APP_VER = typeof __APP_VER__ !== 'undefined' ? __APP_VER__ : 28;
+  const APP_VER = typeof __APP_VER__ !== 'undefined' ? __APP_VER__ : 29;
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);

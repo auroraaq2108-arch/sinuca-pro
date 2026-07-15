@@ -27,7 +27,7 @@ const MIME = {
 // É a ÚNICA fonte de verdade — index.html e js/ui.js têm o placeholder
 // __APP_VER__, que o servidor troca pelo número real ao servir esses dois
 // arquivos (ver injectVer() abaixo). Só precisa bumpar aqui.
-const APP_VER = 28;
+const APP_VER = 29;
 
 // senha do painel do dono: DEVE vir da variável de ambiente ADMIN_PASS no Render.
 // Sem ela (ou usando a antiga que vazou no repositório), o painel fica DESATIVADO.

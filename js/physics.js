@@ -21,7 +21,7 @@ const PHYS = (() => {
   const E_BALL = 0.95;      // restituição bola-bola
   const E_CUSH = 0.78;      // restituição na tabela
   const MAX_V = 1500;       // velocidade máxima da tacada
-  const CUSH_GRIP = 0.16;   // quanto o efeito lateral desvia a bola ao bater na tabela
+  const CUSH_GRIP = 0.1;    // quanto o efeito lateral desvia a bola ao bater na tabela
   const CUSH_SPIN_DECAY = 0.45; // quanto do efeito lateral "gruda" na tabela (o resto se perde)
 
   const POCKETS = [
@@ -263,14 +263,15 @@ const PHYS = (() => {
   }
 
   // velocidade angular inicial a partir do ponto de tacada (efeito/spin,
-  // cada eixo de -1 a 1) e da velocidade de saída da tacada — física real
-  // de "onde o taco bate na bola" (deslocado do centro cria giro).
+  // cada eixo de -1 a 1) e da velocidade de saída da tacada — deslocado do
+  // centro cria giro. SPIN_STRENGTH é calibrado pro jogo (não pra bater
+  // exatamente com um deslocamento real de taco): valor mais alto = efeito
+  // mais dramático (e mais fácil de perder o controle da bola).
   function spinToOmega(spinX, spinY, v0, angle) {
-    const OFFSET_FRAC = 0.5; // deslocamento máx. do taco = metade do raio
-    const CSPIN = OFFSET_FRAC * 2.5;
+    const SPIN_STRENGTH = 0.6;
     const dx = Math.cos(angle), dy = Math.sin(angle);
-    const wFollow = spinY * CSPIN * v0 / R; // eixo perpendicular à tacada (segue/puxa)
-    const wSide = spinX * CSPIN * v0 / R;   // eixo vertical (efeito lateral)
+    const wFollow = spinY * SPIN_STRENGTH * v0 / R; // eixo perpendicular à tacada (segue/puxa)
+    const wSide = spinX * SPIN_STRENGTH * v0 / R;   // eixo vertical (efeito lateral)
     return { wx: -wFollow * dy, wy: wFollow * dx, wz: wSide };
   }
 
