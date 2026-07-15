@@ -214,6 +214,9 @@ function recordResult(winnerId, loserId) {
   return d;
 }
 
+// "2026-07-14 18:30" — sem depender de ICU/locale do Node, sempre igual
+const fmtDate = ms => (ms ? new Date(ms).toISOString().replace('T', ' ').slice(0, 16) : '—');
+
 // resumo para o painel do dono
 function adminStats() {
   const users = Object.values(db.users);
@@ -223,6 +226,14 @@ function adminStats() {
     total: users.length,
     ativos24h: users.filter(u => now - u.lastLogin < dia).length,
     horasTotais: Math.round(users.reduce((s, u) => s + (u.hours || 0), 0)),
+    moedasTotais: users.reduce((s, u) => s + (u.coins || 0), 0),
+    // lista completa (mais recentes primeiro), com o saldo de moedas de cada um
+    usuarios: users.slice().sort((a, b) => b.lastLogin - a.lastLogin).slice(0, 500)
+      .map(u => ({
+        nick: u.nick, email: u.email, coins: u.coins, pts: u.pts, vd: `${u.w}-${u.l}`,
+        horas: +(u.hours || 0).toFixed(1), logins: u.logins,
+        criado: fmtDate(u.createdAt), ultimoLogin: fmtDate(u.lastLogin),
+      })),
     maisHoras: users.slice().sort((a, b) => (b.hours || 0) - (a.hours || 0)).slice(0, 10)
       .map(u => ({ nick: u.nick, horas: +(u.hours || 0).toFixed(1), logins: u.logins, pts: u.pts })),
     maisLogins: users.slice().sort((a, b) => (b.logins || 0) - (a.logins || 0)).slice(0, 10)

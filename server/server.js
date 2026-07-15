@@ -135,13 +135,20 @@ const server = http.createServer((req, res) => {
     const esc = x => String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const tbl = (title, rows, cols) =>
       `<h2>${title}</h2><table><tr>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr>` +
-      (rows.length ? rows.map(r => `<tr>${cols.map(c => `<td>${esc(r[c[1]])}</td>`).join('')}</tr>`).join('') : '<tr><td colspan="9">—</td></tr>') +
+      (rows.length ? rows.map(r => `<tr>${cols.map(c => `<td>${esc(r[c[1]])}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${cols.length}">—</td></tr>`) +
       '</table>';
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Painel — Sinuca Pro</title>
-<style>body{font-family:system-ui;background:#0a1826;color:#e9eef4;padding:16px}h1{color:#f0b429}h2{color:#f0b429;font-size:1.1rem;margin-top:22px}table{border-collapse:collapse;width:100%;margin-top:6px}td,th{border:1px solid #2a4a6b;padding:7px;text-align:left}th{background:#142c44}.big{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0}.card{background:#142c44;border:1px solid #2a4a6b;border-radius:10px;padding:14px 20px}.card b{font-size:1.8rem;color:#f0b429;display:block}</style>
+<style>body{font-family:system-ui;background:#0a1826;color:#e9eef4;padding:16px}h1{color:#f0b429}h2{color:#f0b429;font-size:1.1rem;margin-top:22px}table{border-collapse:collapse;width:100%;margin-top:6px}td,th{border:1px solid #2a4a6b;padding:7px;text-align:left}th{background:#142c44}.big{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0}.card{background:#142c44;border:1px solid #2a4a6b;border-radius:10px;padding:14px 20px}.card b{font-size:1.8rem;color:#f0b429;display:block}.twrap{overflow-x:auto}</style>
 </head><body><h1>📊 Painel Sinuca Pro</h1>
-<div class="big"><div class="card"><b>${s.total}</b>cadastrados</div><div class="card"><b>${s.ativos24h}</b>ativos (24h)</div><div class="card"><b>${s.horasTotais}h</b>jogadas no total</div></div>
+<div class="big">
+<div class="card"><b>${s.total}</b>cadastrados</div>
+<div class="card"><b>${s.ativos24h}</b>ativos (24h)</div>
+<div class="card"><b>${s.horasTotais}h</b>jogadas no total</div>
+<div class="card"><b>💰 ${s.moedasTotais.toLocaleString('pt-BR')}</b>moedas de teste em circulação</div>
+</div>
+<div class="twrap">${tbl(`👥 Usuários (${s.usuarios.length}${s.usuarios.length >= 500 ? '+, mostrando os 500 mais recentes' : ''})`, s.usuarios,
+  [['Apelido', 'nick'], ['Email', 'email'], ['💰 Moedas', 'coins'], ['Pontos', 'pts'], ['V-D', 'vd'], ['Horas', 'horas'], ['Logins', 'logins'], ['Último login', 'ultimoLogin'], ['Criado', 'criado']])}</div>
 ${tbl('⏱ Mais horas jogadas', s.maisHoras, [['Apelido', 'nick'], ['Horas', 'horas'], ['Logins', 'logins'], ['Pontos', 'pts']])}
 ${tbl('🔁 Mais logins', s.maisLogins, [['Apelido', 'nick'], ['Logins', 'logins'], ['Horas', 'horas']])}
 <p style="color:#7d92a8;margin-top:20px">Atenção: no plano grátis os dados somem quando o servidor reinicia. Trocar por banco permanente antes do dinheiro real.</p>
