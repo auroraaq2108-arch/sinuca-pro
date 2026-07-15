@@ -23,8 +23,10 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
-// versão atual do jogo: cliente com número menor é forçado a recarregar
-// (IMPORTANTE: ao mexer em js/css, bump aqui + ?v= + "versão N" no index.html)
+// versão atual do jogo: cliente com número menor é forçado a recarregar.
+// É a ÚNICA fonte de verdade — index.html e js/ui.js têm o placeholder
+// __APP_VER__, que o servidor troca pelo número real ao servir esses dois
+// arquivos (ver injectVer() abaixo). Só precisa bumpar aqui.
 const APP_VER = 28;
 
 // senha do painel do dono: DEVE vir da variável de ambiente ADMIN_PASS no Render.
@@ -142,7 +144,6 @@ const server = http.createServer((req, res) => {
 <div class="big"><div class="card"><b>${s.total}</b>cadastrados</div><div class="card"><b>${s.ativos24h}</b>ativos (24h)</div><div class="card"><b>${s.horasTotais}h</b>jogadas no total</div></div>
 ${tbl('⏱ Mais horas jogadas', s.maisHoras, [['Apelido', 'nick'], ['Horas', 'horas'], ['Logins', 'logins'], ['Pontos', 'pts']])}
 ${tbl('🔁 Mais logins', s.maisLogins, [['Apelido', 'nick'], ['Logins', 'logins'], ['Horas', 'horas']])}
-${tbl('🤝 Afiliados', s.afiliados, [['Apelido', 'nick'], ['Indicados', 'indicados'], ['Ganhou (moedas)', 'ganhou']])}
 <p style="color:#7d92a8;margin-top:20px">Atenção: no plano grátis os dados somem quando o servidor reinicia. Trocar por banco permanente antes do dinheiro real.</p>
 </body></html>`);
     return;
@@ -202,6 +203,9 @@ ${tbl('🤝 Afiliados', s.afiliados, [['Apelido', 'nick'], ['Indicados', 'indica
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); res.end('404'); return; }
     const ext = path.extname(file).toLowerCase();
+    // index.html e js/ui.js têm o placeholder __APP_VER__ (ver comentário
+    // do APP_VER lá em cima) — só esses dois arquivos precisam de troca de texto.
+    if (p === '/index.html' || p === '/js/ui.js') data = Buffer.from(data.toString('utf8').replaceAll('__APP_VER__', String(APP_VER)));
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       // sempre a versão mais nova: jogador com jogo desatualizado não conversa com o novo
@@ -354,26 +358,6 @@ function leave(conn, final) {
   conn.code = null;
 }
 
-// ---------- aceite de partida (fila encontrou: os dois confirmam) ----------
-function cancelPM(pm, decliner, reason) {
-  clearTimeout(pm.timer);
-  const sides = [pm.a, pm.b];
-  sides.forEach(c => { if (c) c.pm = null; });
-  sides.forEach((c, i) => {
-    if (!c || !c.alive) return;
-    if (c === decliner) {
-      c.send(JSON.stringify({ t: 'nomatch', m: 'Você recusou a partida.' }));
-    } else if (pm.acc[i]) {
-      // quem aceitou volta pra frente da fila automaticamente
-      queue.unshift({ conn: c, mode: pm.mode, bestOf: i === 0 ? pm.bestOfA : pm.bestOfB, stake: pm.stake });
-      c.send(JSON.stringify({ t: 'nomatch', m: reason || 'O adversário recusou.', requeued: true }));
-      c.send(JSON.stringify({ t: 'queued', stake: pm.stake }));
-    } else {
-      c.send(JSON.stringify({ t: 'nomatch', m: reason || 'Partida cancelada.' }));
-    }
-  });
-}
-
 server.on('upgrade', (req, socket) => {
   const key = req.headers['sec-websocket-key'];
   if (!key) { socket.destroy(); return; }
@@ -387,7 +371,6 @@ server.on('upgrade', (req, socket) => {
   conn.room = null;
   conn.seat = -1;
   conn.code = null;
-  conn.pm = null; // aceite de partida pendente
   allConns.add(conn);
 
   conn.onmessage = raw => {
@@ -435,31 +418,6 @@ server.on('upgrade', (req, socket) => {
         const other = pend.room.seats[1 - pend.seat];
         if (other) other.send(JSON.stringify({ t: 'peer-back' }));
       }
-      return;
-    }
-
-    // aceite da partida encontrada na fila
-    if (msg.t === 'accept') {
-      const pm = conn.pm;
-      if (!pm) return;
-      pm.acc[conn === pm.a ? 0 : 1] = true;
-      if (pm.acc[0] && pm.acc[1]) {
-        clearTimeout(pm.timer);
-        pm.a.pm = null; pm.b.pm = null;
-        const code = 'QM' + (++qmCounter);
-        const room = { seats: [pm.a, pm.b], reported: true, stake: pm.stake };
-        rooms.set(code, room);
-        pm.a.room = room; pm.a.seat = 0; pm.a.code = code;
-        pm.b.room = room; pm.b.seat = 1; pm.b.code = code;
-        pm.a.send(JSON.stringify({ t: 'matched', seat: 0, mode: pm.mode, bestOf: pm.bestOfA, stake: pm.stake, name: pm.b.playerName }));
-        pm.b.send(JSON.stringify({ t: 'matched', seat: 1, mode: pm.mode, bestOf: pm.bestOfA, stake: pm.stake, name: pm.a.playerName }));
-      } else {
-        conn.send(JSON.stringify({ t: 'waitaccept' }));
-      }
-      return;
-    }
-    if (msg.t === 'decline') {
-      if (conn.pm) cancelPM(conn.pm, conn);
       return;
     }
 
@@ -550,7 +508,6 @@ server.on('upgrade', (req, socket) => {
     if (msg.t === 'create') {
       leave(conn, true);
       unqueue(conn);
-      if (conn.pm) cancelPM(conn.pm, conn);
       const want = String(msg.code || '').toUpperCase().trim();
       if (want && !/^[A-Z0-9]{3,8}$/.test(want)) {
         conn.send(JSON.stringify({ t: 'err', m: 'Senha inválida: use 3 a 8 letras/números, sem espaço' }));
@@ -573,7 +530,6 @@ server.on('upgrade', (req, socket) => {
     if (msg.t === 'join') {
       leave(conn, true);
       unqueue(conn);
-      if (conn.pm) cancelPM(conn.pm, conn);
       const wanted = String(msg.code || '').toUpperCase().trim();
       const r = rooms.get(wanted);
       if (!r || !r.seats[0]) { conn.send(JSON.stringify({ t: 'err', m: 'Sala não encontrada' })); return; }
@@ -591,7 +547,6 @@ server.on('upgrade', (req, socket) => {
     // saída voluntária (botão sair/menu): libera a sala na hora
     if (msg.t === 'bye') {
       unqueue(conn);
-      if (conn.pm) cancelPM(conn.pm, conn);
       leave(conn, true);
       return;
     }
@@ -614,7 +569,6 @@ server.on('upgrade', (req, socket) => {
   conn.onclose = () => {
     allConns.delete(conn);
     unqueue(conn);
-    if (conn.pm) cancelPM(conn.pm, conn);
     leave(conn, false); // queda de conexão: vaga fica guardada pra reconectar
   };
 });

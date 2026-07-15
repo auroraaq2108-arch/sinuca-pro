@@ -21,7 +21,7 @@ const SUPA_URL = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '').rep
 const SUPA_KEY = process.env.SUPABASE_KEY || '';
 const USE_SUPA = !!(SUPA_URL && SUPA_KEY);
 
-let db = { users: {}, byEmail: {}, byRef: {} };
+let db = { users: {}, byEmail: {} };
 
 const sessions = new Map(); // token -> { id, exp } (em memória; cai no restart)
 setInterval(() => {
@@ -62,7 +62,7 @@ function supaReq(method, pathq, body) {
   });
 }
 
-function indexUser(u) { db.users[u.id] = u; db.byEmail[u.email] = u.id; db.byRef[u.refCode] = u.id; }
+function indexUser(u) { db.users[u.id] = u; db.byEmail[u.email] = u.id; }
 
 // carrega tudo pra memória no início (o servidor espera o `ready` antes de aceitar jogadores)
 const ready = (async () => {
@@ -77,7 +77,7 @@ const ready = (async () => {
   } else {
     try {
       const loaded = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-      db = { users: loaded.users || {}, byEmail: loaded.byEmail || {}, byRef: loaded.byRef || {} };
+      db = { users: loaded.users || {}, byEmail: loaded.byEmail || {} };
     } catch (e) { /* primeiro uso */ }
     console.log('Armazenamento em ARQUIVO (efêmero na nuvem grátis). Configure SUPABASE_URL/SUPABASE_KEY pra permanente.');
   }
@@ -128,12 +128,6 @@ function newToken(id) {
   return t;
 }
 const uid = () => 'u' + crypto.randomBytes(8).toString('hex');
-function refCode() {
-  const C = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let c;
-  do { c = ''; for (let i = 0; i < 6; i++) c += C[(Math.random() * C.length) | 0]; } while (db.byRef[c]);
-  return c;
-}
 
 const normEmail = e => String(e || '').trim().toLowerCase();
 const cleanNick = n => String(n || '').trim().slice(0, 14);
@@ -144,11 +138,10 @@ function pub(u) {
   return {
     id: u.id, nick: u.nick, email: u.email,
     coins: u.coins, w: u.w, l: u.l, pts: u.pts,
-    refCode: u.refCode, refCount: u.refCount || 0, refEarn: u.refEarn || 0,
   };
 }
 
-async function register({ email, password, nick, ref }) {
+async function register({ email, password, nick }) {
   email = normEmail(email);
   nick = cleanNick(nick);
   password = String(password || '');
@@ -161,21 +154,13 @@ async function register({ email, password, nick, ref }) {
   const id = uid();
   const salt = crypto.randomBytes(16).toString('hex');
   const now = Date.now();
-  const refBy = ref && db.byRef[String(ref).toUpperCase()] ? String(ref).toUpperCase() : null;
   const user = {
     id, email, nick, salt, pass: await hashPw(password, salt),
     coins: 500, w: 0, l: 0, pts: 1000,
     hours: 0, logins: 1, createdAt: now, lastLogin: now,
-    refCode: refCode(), refBy, refCount: 0, refEarn: 0,
   };
   db.users[id] = user;
   db.byEmail[email] = id;
-  db.byRef[user.refCode] = id;
-  // bônus de indicação: quem trouxe ganha moedas de teste + contador
-  if (refBy) {
-    const host = db.users[db.byRef[refBy]];
-    if (host) { host.refCount = (host.refCount || 0) + 1; host.refEarn = (host.refEarn || 0) + 100; host.coins += 100; touch(host); }
-  }
   await persistNow(user); // conta nova é gravada JÁ (não pode se perder)
   return { token: newToken(id), user: pub(user) };
 }
@@ -229,20 +214,6 @@ function recordResult(winnerId, loserId) {
   return d;
 }
 
-function addPlayTime(id, seconds) {
-  const u = db.users[id];
-  if (!u) return;
-  u.hours = (u.hours || 0) + seconds / 3600;
-  touch(u);
-}
-
-function top(n = 20) {
-  return Object.values(db.users)
-    .sort((a, b) => b.pts - a.pts)
-    .slice(0, n)
-    .map(u => ({ nick: u.nick, pts: u.pts, w: u.w, l: u.l }));
-}
-
 // resumo para o painel do dono
 function adminStats() {
   const users = Object.values(db.users);
@@ -256,12 +227,10 @@ function adminStats() {
       .map(u => ({ nick: u.nick, horas: +(u.hours || 0).toFixed(1), logins: u.logins, pts: u.pts })),
     maisLogins: users.slice().sort((a, b) => (b.logins || 0) - (a.logins || 0)).slice(0, 10)
       .map(u => ({ nick: u.nick, logins: u.logins, horas: +(u.hours || 0).toFixed(1) })),
-    afiliados: users.filter(u => (u.refCount || 0) > 0).sort((a, b) => b.refCount - a.refCount).slice(0, 10)
-      .map(u => ({ nick: u.nick, indicados: u.refCount, ganhou: u.refEarn })),
   };
 }
 
 module.exports = {
   ready, register, login, resume, byId, userByToken, pub,
-  setCoins, recordResult, addPlayTime, top, adminStats,
+  setCoins, recordResult, adminStats,
 };

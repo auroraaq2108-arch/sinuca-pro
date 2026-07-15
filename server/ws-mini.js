@@ -1,7 +1,5 @@
-// ws-mini.js — WebSocket mínimo (RFC 6455), sem dependências externas.
-// Usado pelo servidor (wrap) e pelos testes automatizados (connect).
+// ws-mini.js — WebSocket mínimo (RFC 6455) do lado servidor, sem dependências externas.
 const crypto = require('crypto');
-const net = require('net');
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_FRAME = 262144; // 256KB por frame — o jogo não manda nada perto disso
@@ -102,91 +100,4 @@ function wrap(socket) {
   return conn;
 }
 
-// cliente mínimo (só para os testes automatizados em Node)
-function connect(host, port, onopen) {
-  const key = crypto.randomBytes(16).toString('base64');
-  const conn = { onmessage: null, onclose: null, alive: false };
-  let hand = Buffer.alloc(0), done = false, buf = Buffer.alloc(0);
-
-  const sock = net.connect(port, host, () => {
-    sock.write(
-      `GET / HTTP/1.1\r\nHost: ${host}:${port}\r\nUpgrade: websocket\r\n` +
-      `Connection: Upgrade\r\nSec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`
-    );
-  });
-
-  sock.on('data', chunk => {
-    if (!done) {
-      hand = Buffer.concat([hand, chunk]);
-      const idx = hand.indexOf('\r\n\r\n');
-      if (idx === -1) return;
-      done = true;
-      conn.alive = true;
-      const rest = hand.slice(idx + 4);
-      if (onopen) onopen();
-      if (rest.length) handle(rest);
-      return;
-    }
-    handle(chunk);
-  });
-
-  function handle(chunk) {
-    buf = Buffer.concat([buf, chunk]);
-    while (true) {
-      if (buf.length < 2) return;
-      const fin = (buf[0] & 0x80) !== 0;
-      const op = buf[0] & 0x0f;
-      let len = buf[1] & 0x7f; // servidor não mascara
-      let off = 2;
-      if (len === 126) {
-        if (buf.length < 4) return;
-        len = buf.readUInt16BE(2);
-        off = 4;
-      } else if (len === 127) {
-        if (buf.length < 10) return;
-        len = Number(buf.readBigUInt64BE(2));
-        off = 10;
-      }
-      if (buf.length < off + len) return;
-      const payload = buf.slice(off, off + len);
-      buf = buf.slice(off + len);
-      if (op === 8) {
-        conn.alive = false;
-        sock.end();
-        if (conn.onclose) conn.onclose();
-        return;
-      }
-      if (op === 9 || op === 10) continue;
-      if (fin && conn.onmessage) conn.onmessage(payload.toString('utf8'));
-    }
-  }
-
-  conn.send = data => {
-    const payload = Buffer.from(String(data), 'utf8');
-    const mask = crypto.randomBytes(4);
-    let header;
-    if (payload.length < 126) {
-      header = Buffer.from([0x81, 0x80 | payload.length]);
-    } else {
-      header = Buffer.alloc(4);
-      header[0] = 0x81;
-      header[1] = 0x80 | 126;
-      header.writeUInt16BE(payload.length, 2);
-    }
-    const maskedPayload = Buffer.from(payload);
-    for (let i = 0; i < maskedPayload.length; i++) maskedPayload[i] ^= mask[i % 4];
-    try { sock.write(Buffer.concat([header, mask, maskedPayload])); } catch (e) { /* fechado */ }
-  };
-  conn.close = () => { try { sock.end(); } catch (e) { /* fechado */ } };
-
-  sock.on('close', () => {
-    if (conn.alive) {
-      conn.alive = false;
-      if (conn.onclose) conn.onclose();
-    }
-  });
-  sock.on('error', () => { /* tratado pelo close */ });
-  return conn;
-}
-
-module.exports = { acceptKey, wrap, connect };
+module.exports = { acceptKey, wrap };

@@ -2,7 +2,9 @@
 const UI = (() => {
   const $ = s => document.querySelector(s);
   const RAKE = 0.10; // taxa da plataforma no desafio (10%)
-  const APP_VER = 28; // deve bater com o APP_VER do servidor (senão o servidor manda recarregar)
+  // troca pelo APP_VER real quando o servidor entrega este arquivo (ver server.js);
+  // aberto direto do disco (sem servidor, file://) cai no 28 fixo abaixo.
+  const APP_VER = typeof __APP_VER__ !== 'undefined' ? __APP_VER__ : 28;
   const BALL_HEX = { 1: '#f6c916', 2: '#2457d6', 3: '#e33131', 4: '#8b2fd6', 5: '#f07f1d', 6: '#1a9e57', 7: '#a12235', 8: '#181818' };
 
   let coins = parseInt(localStorage.getItem('sinuca_coins') || '500', 10);
@@ -167,13 +169,12 @@ const UI = (() => {
     authError('conectando…', true);
     $('#auth-submit').disabled = true;
     const path = authMode === 'register' ? '/register' : '/login';
-    const body = authMode === 'register' ? { email, password, nick, ref: pendingRef } : { email, password };
+    const body = authMode === 'register' ? { email, password, nick } : { email, password };
     fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(r => r.json().then(j => ({ ok: r.ok, j })))
       .then(({ ok, j }) => {
         $('#auth-submit').disabled = false;
         if (!ok || j.err) { authError(j.err || 'não deu certo, tente de novo'); return; }
-        pendingRef = null;
         applyAccount(j);
       })
       .catch(() => { $('#auth-submit').disabled = false; authError('sem conexão com o servidor'); });
@@ -190,13 +191,6 @@ const UI = (() => {
     $('#auth-pass').value = '';
     showScreen('screen-auth');
   }
-
-  // link de indicação recebido na URL (?ref=CODE)
-  let pendingRef = null;
-  (function () {
-    const m = (location.search || '').match(/[?&]ref=([A-Za-z0-9]{4,8})/);
-    if (m) pendingRef = m[1].toUpperCase();
-  })();
 
   // ao abrir: tenta entrar com o token salvo; senão mostra cadastro/login
   function bootAuth() {
@@ -215,9 +209,8 @@ const UI = (() => {
         .catch(() => { showScreen('screen-menu'); }); // servidor fora do ar: entra offline
     } else {
       const savedEmail = localStorage.getItem('sinuca_email') || '';
-      setAuthMode(savedEmail && !pendingRef ? 'login' : 'register');
+      setAuthMode(savedEmail ? 'login' : 'register');
       $('#auth-email').value = savedEmail;
-      if (pendingRef) authError('🤝 Você foi convidado! Crie sua conta.', true);
       showScreen('screen-auth');
     }
   }

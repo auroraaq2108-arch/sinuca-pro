@@ -28,7 +28,7 @@ const Game = (() => {
   let sinkAnims = [];
   let shake = 0, trail = [], parts = [], strike = null;
   // online: este aparelho é a "autoridade" da tacada atual (simula a física e transmite)
-  let netAuth = false, snapAcc = 0, aimAcc = 0;
+  let netAuth = false, snapAcc = 0;
   const TILT_A = 9 * Math.PI / 180, TILT_D = 1100; // perspectiva 2.5D (CSS)
   let raf = 0, lastT = 0;
   let aiming = false;
@@ -158,7 +158,7 @@ const Game = (() => {
     openTable = true; breakShot = true;
     ghost = null; botAnim = null; aiming = false;
     sinkAnims = []; trail = []; parts = []; strike = null;
-    netAuth = false; snapAcc = 0; aimAcc = 0;
+    netAuth = false; snapAcc = 0;
     spin = { x: 0, y: 0 };
     // força NÃO reseta: fica onde o jogador deixou na barra (evita dessincronia)
     shotTimer = TURN_TIME;
@@ -475,14 +475,16 @@ const Game = (() => {
     maybeBot();
   }
 
-  // próximo jogo da série online: os dois aparelhos aplicam a mesma mesa
-  function nextGameOnline(ballsArr) {
+  // próximo jogo da série (local ou online): re-arma a mesa, alterna quem
+  // sai. `newBalls` já vem pronto — rack novo (local) ou o mesmo array que
+  // o anfitrião mandou pela rede (online, os dois aparelhos usam a mesma mesa).
+  function resetForNextGame(newBalls) {
     token++;
     match.gameNum++;
     match.breaker = 1 - match.breaker;
     match.potCount = [0, 0];
     for (const p of match.players) p.group = null;
-    balls = ballsArr.map(b => mkBall(b.n, b.x, b.y));
+    balls = newBalls;
     state = 'aim';
     current = match.breaker;
     openTable = true; breakShot = true;
@@ -495,6 +497,11 @@ const Game = (() => {
     autoAim();
     UI.refreshHud(); UI.refreshControls();
     UI.toast(`Jogo ${match.gameNum} — ${match.players[current].name} começa`);
+  }
+
+  // próximo jogo da série online: os dois aparelhos aplicam a mesma mesa
+  function nextGameOnline(ballsArr) {
+    resetForNextGame(ballsArr.map(b => mkBall(b.n, b.x, b.y)));
   }
 
   // ---------- online: sincronização entre os dois aparelhos ----------
@@ -703,25 +710,9 @@ const Game = (() => {
     }
   }
 
-  // próximo jogo da série: re-arma a mesa, alterna quem sai
+  // próximo jogo da série local (vs bot / 2 jogadores no mesmo aparelho)
   function nextGame() {
-    token++;
-    match.gameNum++;
-    match.breaker = 1 - match.breaker;
-    match.potCount = [0, 0];
-    for (const p of match.players) p.group = null;
-    balls = rack(match.mode);
-    state = 'aim';
-    current = match.breaker;
-    openTable = true; breakShot = true;
-    ghost = null; botAnim = null; aiming = false;
-    sinkAnims = [];
-    spin = { x: 0, y: 0 };
-    // força mantida entre jogos
-    shotTimer = TURN_TIME;
-    autoAim();
-    UI.refreshHud(); UI.refreshControls();
-    UI.toast(`Jogo ${match.gameNum} — ${match.players[current].name} começa`);
+    resetForNextGame(rack(match.mode));
     maybeBot();
   }
 
@@ -857,6 +848,39 @@ const Game = (() => {
     vig.addColorStop(0, 'rgba(0,0,0,0)');
     vig.addColorStop(1, 'rgba(0,0,0,0.45)');
     cache.vignette = vig;
+
+    // bolas: gradientes construídos em coordenadas LOCAIS (relativas ao
+    // centro da bola) uma única vez — desenhar com ctx.translate(x,y) em
+    // vez de recriar o CanvasGradient a cada bola em cada quadro (~16
+    // bolas x 60fps de alocação, custava caro em celular fraco).
+    const shSh = ctx.createRadialGradient(2, 3, 1, 2, 3, R + 4);
+    shSh.addColorStop(0, 'rgba(0,0,0,0.4)');
+    shSh.addColorStop(1, 'rgba(0,0,0,0)');
+    cache.ballShadow = shSh;
+
+    const gloss = ctx.createRadialGradient(0, 0, 0.5, 0, 0, 4.5);
+    gloss.addColorStop(0, 'rgba(255,255,255,0.85)');
+    gloss.addColorStop(1, 'rgba(255,255,255,0)');
+    cache.ballGloss = gloss;
+
+    cache.ballBody = {};
+    cache.ballStripe = {};
+    for (let n = 0; n <= 15; n++) {
+      const base = (n === 0 || n > 8) ? '#f7f3e7' : colorOf(n);
+      const body = ctx.createRadialGradient(-3.5, -4.5, 1.5, 0, 0, R + 1.5);
+      body.addColorStop(0, shade(base, 0.5));
+      body.addColorStop(0.45, base);
+      body.addColorStop(1, shade(base, -0.45));
+      cache.ballBody[n] = body;
+      if (n > 8) {
+        const c = colorOf(n);
+        const stripe = ctx.createLinearGradient(0, -R * 0.55, 0, R * 0.55);
+        stripe.addColorStop(0, shade(c, 0.25));
+        stripe.addColorStop(0.5, c);
+        stripe.addColorStop(1, shade(c, -0.3));
+        cache.ballStripe[n] = stripe;
+      }
+    }
   }
 
   function render() {
@@ -1042,23 +1066,20 @@ const Game = (() => {
 
   function drawBall(b) {
     const { x, y } = b;
+    // tudo daqui pra baixo desenha em coordenadas LOCAIS (a bola fica na
+    // origem) — é isso que permite reusar os gradientes cacheados em
+    // buildCache() em vez de criar um CanvasGradient novo por bola/quadro.
+    ctx.save();
+    ctx.translate(x, y);
     // sombra suave
-    const sh = ctx.createRadialGradient(x + 2, y + 3, 1, x + 2, y + 3, R + 4);
-    sh.addColorStop(0, 'rgba(0,0,0,0.4)');
-    sh.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.beginPath();
-    ctx.arc(x + 2, y + 3, R + 4, 0, 7);
-    ctx.fillStyle = sh;
+    ctx.arc(2, 3, R + 4, 0, 7);
+    ctx.fillStyle = cache.ballShadow;
     ctx.fill();
     // corpo com volume
-    const base = (b.n === 0 || b.n > 8) ? '#f7f3e7' : colorOf(b.n);
-    const g = ctx.createRadialGradient(x - 3.5, y - 4.5, 1.5, x, y, R + 1.5);
-    g.addColorStop(0, shade(base, 0.5));
-    g.addColorStop(0.45, base);
-    g.addColorStop(1, shade(base, -0.45));
     ctx.beginPath();
-    ctx.arc(x, y, R, 0, 7);
-    ctx.fillStyle = g;
+    ctx.arc(0, 0, R, 0, 7);
+    ctx.fillStyle = cache.ballBody[b.n];
     ctx.fill();
     // rolamento visual: o padrão da bola desliza na direção do movimento
     const rolling = b.vx !== 0 || b.vy !== 0 || !!b.lerpMoving;
@@ -1068,21 +1089,15 @@ const Game = (() => {
     if (b.n > 8) {
       ctx.save();
       ctx.beginPath();
-      ctx.arc(x, y, R, 0, 7);
+      ctx.arc(0, 0, R, 0, 7);
       ctx.clip();
-      const c = colorOf(b.n);
       if (rolling) {
-        ctx.translate(x, y);
         ctx.rotate(ra);
-        ctx.fillStyle = c;
+        ctx.fillStyle = colorOf(b.n);
         ctx.fillRect(off - R * 0.55, -R - 1, R * 1.1, 2 * R + 2);
       } else {
-        const bg = ctx.createLinearGradient(x, y - R * 0.55, x, y + R * 0.55);
-        bg.addColorStop(0, shade(c, 0.25));
-        bg.addColorStop(0.5, c);
-        bg.addColorStop(1, shade(c, -0.3));
-        ctx.fillStyle = bg;
-        ctx.fillRect(x - R, y - R * 0.55, 2 * R, R * 1.1);
+        ctx.fillStyle = cache.ballStripe[b.n];
+        ctx.fillRect(-R, -R * 0.55, 2 * R, R * 1.1);
       }
       ctx.restore();
     }
@@ -1090,10 +1105,10 @@ const Game = (() => {
     if (b.n > 0) {
       ctx.save();
       ctx.beginPath();
-      ctx.arc(x, y, R, 0, 7);
+      ctx.arc(0, 0, R, 0, 7);
       ctx.clip();
-      const nx = x + (rolling ? Math.cos(ra) * off : 0);
-      const ny = y + (rolling ? Math.sin(ra) * off : 0);
+      const nx = rolling ? Math.cos(ra) * off : 0;
+      const ny = rolling ? Math.sin(ra) * off : 0;
       ctx.beginPath();
       ctx.arc(nx, ny, 4.6, 0, 7);
       ctx.fillStyle = '#fdfcf7';
@@ -1108,10 +1123,10 @@ const Game = (() => {
       // pontinho vermelho da bola branca (mostra o giro)
       ctx.save();
       ctx.beginPath();
-      ctx.arc(x, y, R, 0, 7);
+      ctx.arc(0, 0, R, 0, 7);
       ctx.clip();
-      const nx = x + (rolling ? Math.cos(ra) * off : R * 0.35);
-      const ny = y + (rolling ? Math.sin(ra) * off : -R * 0.3);
+      const nx = rolling ? Math.cos(ra) * off : R * 0.35;
+      const ny = rolling ? Math.sin(ra) * off : -R * 0.3;
       ctx.beginPath();
       ctx.arc(nx, ny, 1.8, 0, 7);
       ctx.fillStyle = 'rgba(200,40,40,0.85)';
@@ -1120,17 +1135,15 @@ const Game = (() => {
     }
     // brilho (reflexo da luz)
     ctx.save();
-    ctx.translate(x - 3, y - 4.2);
+    ctx.translate(-3, -4.2);
     ctx.rotate(-0.5);
     ctx.scale(1, 0.62);
-    const gl = ctx.createRadialGradient(0, 0, 0.5, 0, 0, 4.5);
-    gl.addColorStop(0, 'rgba(255,255,255,0.85)');
-    gl.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.beginPath();
     ctx.arc(0, 0, 4.5, 0, 7);
-    ctx.fillStyle = gl;
+    ctx.fillStyle = cache.ballGloss;
     ctx.fill();
     ctx.restore();
+    ctx.restore(); // desfaz o translate(x, y) do início
   }
 
   function drawSink(s) {
