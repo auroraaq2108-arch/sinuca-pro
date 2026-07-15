@@ -830,6 +830,15 @@ const Game = (() => {
     buildCache();
   }
 
+  // desenha um tile num canvas separado e devolve como CanvasPattern —
+  // gerado uma vez só (não por quadro) e depois só "carimbado" no fundo.
+  function makeTilePattern(w, h, paint) {
+    const t = document.createElement('canvas');
+    t.width = w; t.height = h;
+    paint(t.getContext('2d'), w, h);
+    return ctx.createPattern(t, 'repeat');
+  }
+
   function buildCache() {
     // madeira
     const wood = ctx.createLinearGradient(0, 0, 0, 500);
@@ -837,12 +846,33 @@ const Game = (() => {
     wood.addColorStop(0.5, '#5a3719');
     wood.addColorStop(1, '#42260f');
     cache.wood = wood;
+    // grão da madeira: linhas onduladas finas, claras e escuras — desenhado
+    // uma vez num tile pequeno e repetido como padrão (sem custo por quadro)
+    cache.woodGrain = makeTilePattern(96, 48, (tc, w, h) => {
+      for (let i = 0; i < 14; i++) {
+        const y = (i / 14) * h + (Math.random() - 0.5) * 3;
+        tc.strokeStyle = i % 3 === 0 ? 'rgba(255,220,170,0.10)' : 'rgba(20,8,0,0.14)';
+        tc.lineWidth = 0.6 + Math.random() * 0.8;
+        tc.beginPath();
+        tc.moveTo(0, y);
+        tc.bezierCurveTo(w * 0.3, y + (Math.random() - 0.5) * 6, w * 0.7, y + (Math.random() - 0.5) * 6, w, y);
+        tc.stroke();
+      }
+    });
     // feltro azul com luz central (estilo 8 Ball Pool)
     const felt = ctx.createRadialGradient(450, 250, 60, 450, 250, 520);
     felt.addColorStop(0, '#2f83c2');
     felt.addColorStop(0.55, '#2470ad');
     felt.addColorStop(1, '#153f66');
     cache.felt = felt;
+    // trama do pano: ruído bem sutil (tecido, não plástico liso)
+    cache.feltWeave = makeTilePattern(48, 48, (tc, w, h) => {
+      for (let i = 0; i < 90; i++) {
+        const x = Math.random() * w, y = Math.random() * h;
+        tc.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)';
+        tc.fillRect(x, y, 1, 1);
+      }
+    });
     // vinheta geral
     const vig = ctx.createRadialGradient(450, 250, 250, 450, 250, 620);
     vig.addColorStop(0, 'rgba(0,0,0,0)');
@@ -853,8 +883,10 @@ const Game = (() => {
     // centro da bola) uma única vez — desenhar com ctx.translate(x,y) em
     // vez de recriar o CanvasGradient a cada bola em cada quadro (~16
     // bolas x 60fps de alocação, custava caro em celular fraco).
-    const shSh = ctx.createRadialGradient(2, 3, 1, 2, 3, R + 4);
-    shSh.addColorStop(0, 'rgba(0,0,0,0.4)');
+    // centrada em (0,0): o deslocamento/achatamento da sombra é feito na
+    // hora de desenhar (translate+scale), não fica embutido no gradiente
+    const shSh = ctx.createRadialGradient(0, 0, 1, 0, 0, R + 4);
+    shSh.addColorStop(0, 'rgba(0,0,0,0.42)');
     shSh.addColorStop(1, 'rgba(0,0,0,0)');
     cache.ballShadow = shSh;
 
@@ -862,6 +894,21 @@ const Game = (() => {
     gloss.addColorStop(0, 'rgba(255,255,255,0.85)');
     gloss.addColorStop(1, 'rgba(255,255,255,0)');
     cache.ballGloss = gloss;
+    // ponto especular pequeno e nítido — o "brilho molhado" que fica DENTRO
+    // do brilho suave de cima, dá o acabamento de plástico/resina polida
+    const spec = ctx.createRadialGradient(0, 0, 0, 0, 0, 1.6);
+    spec.addColorStop(0, 'rgba(255,255,255,0.95)');
+    spec.addColorStop(1, 'rgba(255,255,255,0)');
+    cache.ballSpecular = spec;
+
+    // taco: gradiente do corpo afunilado, em coordenadas LOCAIS (0 até
+    // -195) — não depende de x0/pull, então dá pra cachear igual às bolas
+    const stickG = ctx.createLinearGradient(0, 0, -195, 0);
+    stickG.addColorStop(0, '#eed4a3');
+    stickG.addColorStop(0.4, '#c89355');
+    stickG.addColorStop(0.75, '#6b4423');
+    stickG.addColorStop(1, '#2e1c0c');
+    cache.stickBody = stickG;
 
     cache.ballBody = {};
     cache.ballStripe = {};
@@ -969,6 +1016,9 @@ const Game = (() => {
     rounded(2, 2, 896, 496, 30);
     ctx.fillStyle = cache.wood;
     ctx.fill();
+    rounded(2, 2, 896, 496, 30); // repete o contorno pra "carimbar" o grão por cima
+    ctx.fillStyle = cache.woodGrain;
+    ctx.fill();
     ctx.lineWidth = 3;
     ctx.strokeStyle = '#241305';
     ctx.stroke();
@@ -987,6 +1037,8 @@ const Game = (() => {
     }
     // feltro
     ctx.fillStyle = cache.felt;
+    ctx.fillRect(M - 16, M - 16, W + 32, H + 32);
+    ctx.fillStyle = cache.feltWeave; // trama sutil por cima do gradiente
     ctx.fillRect(M - 16, M - 16, W + 32, H + 32);
     // logo no centro do feltro
     ctx.save();
@@ -1071,16 +1123,28 @@ const Game = (() => {
     // buildCache() em vez de criar um CanvasGradient novo por bola/quadro.
     ctx.save();
     ctx.translate(x, y);
-    // sombra suave
+    // sombra de contato: achatada (elipse), como uma bola de verdade projeta
+    // na mesa sob luz de cima — em vez de um borrão circular embaixo dela
+    ctx.save();
+    ctx.translate(2, 4);
+    ctx.scale(1, 0.55);
     ctx.beginPath();
-    ctx.arc(2, 3, R + 4, 0, 7);
+    ctx.arc(0, 0, R + 4, 0, 7);
     ctx.fillStyle = cache.ballShadow;
     ctx.fill();
+    ctx.restore();
     // corpo com volume
     ctx.beginPath();
     ctx.arc(0, 0, R, 0, 7);
     ctx.fillStyle = cache.ballBody[b.n];
     ctx.fill();
+    // luz de contorno: um fiapo de luz na borda oposta ao brilho principal
+    // (luz ambiente "vazando" pela lateral) — separa a bola do fundo escuro
+    ctx.beginPath();
+    ctx.arc(0, 0, R - 0.5, 0.35, 1.55);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 0.9;
+    ctx.stroke();
     // rolamento visual: o padrão da bola desliza na direção do movimento
     const rolling = b.vx !== 0 || b.vy !== 0 || !!b.lerpMoving;
     const off = Math.sin((b.roll || 0) % (Math.PI * 2)) * R * 0.6;
@@ -1133,7 +1197,7 @@ const Game = (() => {
       ctx.fill();
       ctx.restore();
     }
-    // brilho (reflexo da luz)
+    // brilho (reflexo da luz) — mancha suave e grande
     ctx.save();
     ctx.translate(-3, -4.2);
     ctx.rotate(-0.5);
@@ -1141,6 +1205,15 @@ const Game = (() => {
     ctx.beginPath();
     ctx.arc(0, 0, 4.5, 0, 7);
     ctx.fillStyle = cache.ballGloss;
+    ctx.fill();
+    ctx.restore();
+    // ponto especular — pequeno e nítido, dentro do brilho suave, dá o
+    // acabamento de "plástico polido" que uma mancha só não consegue
+    ctx.save();
+    ctx.translate(-3.6, -4.8);
+    ctx.beginPath();
+    ctx.arc(0, 0, 1.6, 0, 7);
+    ctx.fillStyle = cache.ballSpecular;
     ctx.fill();
     ctx.restore();
     ctx.restore(); // desfaz o translate(x, y) do início
@@ -1229,37 +1302,44 @@ const Game = (() => {
     ctx.translate(cx, cy);
     ctx.rotate(angle);
     const x0 = -(R + 4 + pull);
+    ctx.translate(x0, 0); // daqui pra baixo, tudo em coordenadas LOCAIS (0 até -195)
     // sombra do taco
     ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath();
-    ctx.moveTo(x0, 2);
-    ctx.lineTo(x0 - 195, 6);
-    ctx.lineTo(x0 - 195, 8.5);
-    ctx.lineTo(x0, 4.5);
+    ctx.moveTo(0, 2);
+    ctx.lineTo(-195, 6);
+    ctx.lineTo(-195, 8.5);
+    ctx.lineTo(0, 4.5);
     ctx.closePath();
     ctx.fill();
     // corpo afunilado
-    const wg = ctx.createLinearGradient(x0, 0, x0 - 195, 0);
-    wg.addColorStop(0, '#eed4a3');
-    wg.addColorStop(0.4, '#c89355');
-    wg.addColorStop(0.75, '#6b4423');
-    wg.addColorStop(1, '#2e1c0c');
     ctx.beginPath();
-    ctx.moveTo(x0, -2.2);
-    ctx.lineTo(x0 - 195, -4.8);
-    ctx.lineTo(x0 - 195, 4.8);
-    ctx.lineTo(x0, 2.2);
+    ctx.moveTo(0, -2.2);
+    ctx.lineTo(-195, -4.8);
+    ctx.lineTo(-195, 4.8);
+    ctx.lineTo(0, 2.2);
     ctx.closePath();
-    ctx.fillStyle = wg;
+    ctx.fillStyle = cache.stickBody;
     ctx.fill();
-    // anel decorativo
+    // grão da madeira por cima (mesma textura da mesa, reaproveitada)
+    ctx.save();
+    ctx.clip();
+    ctx.globalAlpha *= 0.8;
+    ctx.fillStyle = cache.woodGrain;
+    ctx.fillRect(-195, -5, 195, 10);
+    ctx.restore();
+    // dois anéis decorativos (mais realista que só um)
     ctx.fillStyle = '#d4af37';
-    ctx.fillRect(x0 - 140, -4.1, 4, 8.2);
-    // ferrule (ponteira clara) + sola azul
+    ctx.fillRect(-140, -4.1, 4, 8.2);
+    ctx.fillStyle = '#c9c9c9';
+    ctx.fillRect(-148, -4.35, 2, 8.7);
+    // ferrule (ponteira clara) + sola azul (couro) com realce
     ctx.fillStyle = '#f2ead7';
-    ctx.fillRect(x0 - 8, -2.4, 8, 4.8);
+    ctx.fillRect(-8, -2.4, 8, 4.8);
     ctx.fillStyle = '#3f74a8';
-    ctx.fillRect(x0 - 1, -2.2, 3, 4.4);
+    ctx.fillRect(-1, -2.2, 3, 4.4);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillRect(-1, -2.2, 3, 1);
     ctx.restore();
   }
 
